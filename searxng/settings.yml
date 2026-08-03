@@ -1,0 +1,33 @@
+use_default_settings: true
+
+general:
+  instance_name: "Claude Code Chinese Search"
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  default_lang: zh-CN
+  formats:
+    - html
+    - json
+
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  limiter: false
+  image_proxy: false
+  method: GET
+
+outgoing:
+  request_timeout: 12.0
+  max_request_timeout: 20.0
+
+engines:
+  - name: baidu
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: 360search
+    disabled: false
+  - name: sogou
+    disabled: false

@@ -1,0 +1,64 @@
+services:
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: claude-local-searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SEARXNG_PORT:-8768}:8080"
+    environment:
+      SEARXNG_BASE_URL: http://127.0.0.1:${SEARXNG_PORT:-8768}/
+      SEARXNG_SECRET: ${SEARXNG_SECRET}
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  kiro-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: claude-kiro-gateway
+    restart: unless-stopped
+    depends_on:
+      searxng:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8767}:8000"
+    environment:
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8000
+      PROXY_API_KEY: ${PROXY_API_KEY}
+      KIRO_CREDS_FILE: ${KIRO_CREDS_FILE_CONTAINER:-}
+      KIRO_CLI_DB_FILE: ${KIRO_CLI_DB_FILE_CONTAINER:-}
+      PROFILE_ARN: ${PROFILE_ARN:-}
+      KIRO_REGION: ${KIRO_REGION:-us-east-1}
+      KIRO_API_REGION: ${KIRO_API_REGION:-}
+      VPN_PROXY_URL: ${VPN_PROXY_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DEBUG_MODE: ${DEBUG_MODE:-off}
+      CHINESE_WEB_SEARCH_ENABLED: "true"
+      SEARXNG_URL: http://searxng:8080
+      SEARXNG_ENGINES: baidu,bing,360search,sogou
+      SEARXNG_TIMEOUT: "20"
+      SEARXNG_RETRIES: "2"
+      SEARXNG_RESULT_LIMIT: "12"
+    volumes:
+      - type: bind
+        source: ${KIRO_AWS_CACHE_DIR}
+        target: /home/kiro/.aws/sso/cache
+      - type: bind
+        source: ${KIRO_CLI_DIR}
+        target: /home/kiro/.local/share/kiro-cli
+      - ./debug_logs:/app/debug_logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://127.0.0.1:8000/health', timeout=5).raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
