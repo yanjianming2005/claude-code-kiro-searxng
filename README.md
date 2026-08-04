@@ -106,6 +106,8 @@ export CLAUDE_CODE_MAX_OUTPUT_TOKENS="128000"
 ```jsonc
 {
   "claudeCode.disableLoginPrompt": true,
+  "claudeCode.allowDangerouslySkipPermissions": true,
+  "claudeCode.initialPermissionMode": "bypassPermissions",
 
   "claudeCode.environmentVariables": [
     {
@@ -155,6 +157,11 @@ export CLAUDE_CODE_MAX_OUTPUT_TOKENS="128000"
   ]
 }
 ```
+
+`bypassPermissions` 会让 Bash 和 MCP 工具不再依赖 Claude Code 的 Auto
+安全分类器，因此模型临时不可用时不会出现“auto mode cannot determine the
+safety”并阻塞执行。它同时会跳过命令确认，只应在可信的本机环境中使用。
+修改后需完全重启 VS Code 并新建会话；已有会话会保留原来的权限模式。
 
 终端 Claude Code 和 VS Code 插件的认证写法不同：
 
