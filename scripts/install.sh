@@ -62,6 +62,7 @@ fi
 proxy_api_key="sk-local-$(openssl rand -hex 18)"
 searxng_secret="$(openssl rand -hex 32)"
 gateway_port="${GATEWAY_PORT:-8767}"
+gateway_bind_host="${GATEWAY_BIND_HOST:-127.0.0.1}"
 searxng_port="${SEARXNG_PORT:-8768}"
 vpn_proxy_url=""
 if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 8118 >/dev/null 2>&1; then
@@ -72,6 +73,7 @@ fi
 umask 077
 {
   printf 'GATEWAY_PORT=%s\n' "${gateway_port}"
+  printf 'GATEWAY_BIND_HOST=%s\n' "${gateway_bind_host}"
   printf 'SEARXNG_PORT=%s\n' "${searxng_port}"
   printf 'PROXY_API_KEY=%s\n' "${proxy_api_key}"
   printf 'SEARXNG_SECRET=%s\n' "${searxng_secret}"

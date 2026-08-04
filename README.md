@@ -27,7 +27,7 @@ Claude Code / VS Code
       +-- 模型请求 / 英文搜索 --> Kiro
 ```
 
-两个服务都只绑定 `127.0.0.1`，不会默认暴露给局域网。
+默认情况下，两个服务都只绑定 `127.0.0.1`。如需让局域网其他电脑使用，只开放 Gateway 的 `8767`；SearXNG 的 `8768` 始终留在服务端本机。
 
 ## 前置条件
 
@@ -47,6 +47,12 @@ Claude Code / VS Code
 git clone https://github.com/yanjianming2005/claude-code-kiro-searxng.git
 cd claude-code-kiro-searxng
 ./scripts/install.sh
+```
+
+如果这台电脑要作为局域网 Gateway 服务器，首次安装改为：
+
+```bash
+GATEWAY_BIND_HOST=0.0.0.0 ./scripts/install.sh
 ```
 
 安装脚本会：
@@ -156,6 +162,54 @@ docker compose up -d --build
 | Gateway 健康检查 | `http://127.0.0.1:8767/health` |
 | SearXNG | `http://127.0.0.1:8768` |
 
+## 供局域网其他电脑使用
+
+服务端 `.env` 设置：
+
+```env
+GATEWAY_BIND_HOST=0.0.0.0
+GATEWAY_PORT=8767
+```
+
+修改后重新创建 Gateway 容器：
+
+```bash
+docker compose up -d --force-recreate kiro-gateway
+```
+
+在服务端查看局域网 IP：
+
+```bash
+# macOS Wi-Fi
+ipconfig getifaddr en0
+
+# Linux
+hostname -I
+```
+
+假设服务端地址是 `192.168.0.88`，其他电脑配置：
+
+```bash
+export ANTHROPIC_BASE_URL="http://192.168.0.88:8767"
+export ANTHROPIC_API_KEY="服务端 .env 中的 PROXY_API_KEY"
+unset ANTHROPIC_AUTH_TOKEN
+
+export ANTHROPIC_MODEL="claude-opus-4-6"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-opus-4-6"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-sonnet-4-6"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4-5-20251001"
+```
+
+客户端可先验证：
+
+```bash
+curl http://192.168.0.88:8767/health
+```
+
+`8768` 不需要也不应该监听 `0.0.0.0`：Claude Code 只访问 Gateway，Gateway 在服务端内部调用 SearXNG。
+
+该接口是普通 HTTP，仅适合可信局域网。不要在路由器上做公网端口映射；跨网络访问建议使用 VPN 组网或带 HTTPS 的反向代理。API Key 应通过安全渠道发给同事。
+
 ## WebSearch 路由
 
 Gateway 根据查询文本中是否存在汉字进行路由：
@@ -229,7 +283,7 @@ kiro-cli login
 
 - 仓库不包含任何共享账户、Token、Profile ARN 或固定 API Key。
 - 每位使用者必须用自己的 Kiro 登录凭据。
-- Gateway 和 SearXNG 默认只监听本机。
+- Gateway 默认只监听本机，可显式开放给可信局域网；SearXNG 始终只监听本机。
 - 不要提交 `.env`、`.claude-env`、`credentials.json`、`state.json` 或日志。
 - 如果怀疑本机密钥泄露，删除 `.env` 后重新运行安装脚本即可生成新密钥。
 

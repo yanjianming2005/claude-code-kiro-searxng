@@ -27,7 +27,7 @@ services:
       searxng:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${GATEWAY_PORT:-8767}:8000"
+      - "${GATEWAY_BIND_HOST:-127.0.0.1}:${GATEWAY_PORT:-8767}:8000"
     environment:
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8000
