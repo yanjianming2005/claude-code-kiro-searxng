@@ -239,23 +239,6 @@ export CLAUDE_CODE_MAX_OUTPUT_TOKENS="128000"
 curl http://192.168.0.88:8767/health
 ```
 
-### 大正文从本地文件更新 KM
-
-Kiro 偶尔会在生成较长的 MCP 工具参数时中断。若完整正文已经保存为本地文件，安装仓库提供的文件桥接工具后，Claude Code 只需生成文章 ID 和文件路径，正文由本机直接读取并提交，不再经过模型输出通道：
-
-```bash
-claude mcp add --scope user jemy-km-file -- \
-  python3 "$(pwd)/scripts/km_file_mcp.py"
-```
-
-重启 VS Code 后会出现 `update_article_from_file` 工具。示例任务：
-
-```text
-使用 update_article_from_file，把 KM 2180 更新为 /tmp/km2180_restore.md 的完整内容。
-```
-
-默认只允许读取 `/tmp` 和当前用户主目录内的 UTF-8 文件，单文件上限 10 MiB。可通过 `KM_FILE_ALLOWED_ROOTS`、`KM_FILE_MAX_BYTES` 和 `KM_MCP_URL` 调整。
-
 `8768` 不需要也不应该监听 `0.0.0.0`：Claude Code 只访问 Gateway，Gateway 在服务端内部调用 SearXNG。
 
 该接口是普通 HTTP，仅适合可信局域网。不要在路由器上做公网端口映射；跨网络访问建议使用 VPN 组网或带 HTTPS 的反向代理。API Key 应通过安全渠道发给同事。
