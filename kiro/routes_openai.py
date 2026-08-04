@@ -53,7 +53,7 @@ from kiro.converters_openai import build_kiro_payload
 from kiro.streaming_openai import stream_kiro_to_openai, collect_stream_response, stream_with_first_token_retry
 from kiro.http_client import KiroHttpClient
 from kiro.streaming_core import collect_with_stream_body_retry
-from kiro.utils import generate_conversation_id
+from kiro.utils import generate_conversation_id, get_kiro_inference_url
 from kiro.config import WEB_SEARCH_ENABLED
 from kiro.mcp_tools import handle_native_web_search
 
@@ -347,12 +347,13 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                 logger.warning(f"Failed to log Kiro request: {e}")
             
             # Create HTTP client
-            url = f"{auth_manager.api_host}/generateAssistantResponse"
+            url = get_kiro_inference_url(auth_manager.api_host)
             logger.debug(f"Kiro API URL: {url} (account: {account.id})")
             
             # Kiro always returns an event stream, including for downstream
             # non-streaming requests. Isolate every inference connection.
             http_client = KiroHttpClient(auth_manager, shared_client=None)
+            http_client.configure_tool_call_repair(url, kiro_payload)
             
             try:
                 # Make request to Kiro API
@@ -608,10 +609,11 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
     
     # Kiro always returns an event stream. A per-request client prevents an
     # interrupted body from contaminating a shared connection pool.
-    url = f"{auth_manager.api_host}/generateAssistantResponse"
+    url = get_kiro_inference_url(auth_manager.api_host)
     logger.debug(f"Kiro API URL: {url}")
     
     http_client = KiroHttpClient(auth_manager, shared_client=None)
+    http_client.configure_tool_call_repair(url, kiro_payload)
     try:
         # Make request to Kiro API (for both streaming and non-streaming modes)
         # Important: we wait for Kiro response BEFORE returning StreamingResponse,

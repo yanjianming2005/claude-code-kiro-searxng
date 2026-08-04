@@ -20,6 +20,58 @@ from kiro.truncation_recovery import (
     generate_truncation_tool_result,
     generate_truncation_user_message
 )
+from kiro.tool_call_repair import _build_repair_payload, _extract_json_object
+
+
+class TestToolCallTextRepair:
+    """Tests for reconstructing large tool inputs through plain text."""
+
+    def test_builds_text_only_repair_payload_without_mutating_original(self):
+        original = {
+            "conversationState": {
+                "conversationId": "original",
+                "currentMessage": {
+                    "userInputMessage": {
+                        "content": "write the document",
+                        "modelId": "claude-opus-5",
+                        "userInputMessageContext": {
+                            "tools": [{"toolSpecification": {"name": "save"}}]
+                        },
+                    }
+                },
+            },
+            "additionalModelRequestFields": {"max_tokens": 128000},
+        }
+
+        repaired = _build_repair_payload(
+            original,
+            "save",
+            {"type": "object", "required": ["body"]},
+        )
+
+        repaired_message = repaired["conversationState"]["currentMessage"]["userInputMessage"]
+        assert "tools" not in repaired_message.get("userInputMessageContext", {})
+        assert "Return only one valid JSON object" in repaired_message["content"]
+        assert repaired["additionalModelRequestFields"]["max_tokens"] == 128000
+        assert repaired["additionalModelRequestFields"]["thinking"] == {"type": "disabled"}
+        assert original["conversationState"]["conversationId"] == "original"
+        assert "tools" in original["conversationState"]["currentMessage"]["userInputMessage"]["userInputMessageContext"]
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ('{"id":2180,"body":"正文"}', {"id": 2180, "body": "正文"}),
+            ('```json\n{"body":"正文"}\n```', {"body": "正文"}),
+            ('prefix {"body":"正文"} suffix', {"body": "正文"}),
+        ],
+    )
+    def test_extracts_complete_json_object(self, text, expected):
+        assert _extract_json_object(text) == expected
+
+    @pytest.mark.parametrize("text", ["", "[]", "not json", "{broken"])
+    def test_rejects_invalid_repair_output(self, text):
+        with pytest.raises(ValueError):
+            _extract_json_object(text)
 
 
 class TestRecoveryEnabledCheck:

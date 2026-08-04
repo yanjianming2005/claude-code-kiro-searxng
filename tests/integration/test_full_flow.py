@@ -330,6 +330,7 @@ class TestStreamingFlagHandling:
         # Mock request_with_retry to return our mock response
         with patch('kiro.routes_openai.KiroHttpClient') as MockHttpClient:
             mock_client_instance = AsyncMock()
+            mock_client_instance.configure_tool_call_repair = Mock()
             mock_client_instance.request_with_retry = AsyncMock(return_value=mock_response)
             mock_client_instance.client = AsyncMock()
             mock_client_instance.close = AsyncMock()

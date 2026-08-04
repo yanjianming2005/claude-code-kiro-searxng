@@ -89,6 +89,22 @@ def get_kiro_headers(auth_manager: "KiroAuthManager", token: str) -> dict:
     }
 
 
+def get_kiro_inference_url(api_host: str) -> str:
+    """Return the current Kiro runtime inference endpoint.
+
+    The runtime protocol is served from the host root. The historical
+    ``/generateAssistantResponse`` compatibility path accepts conversations
+    but rejects native ``additionalModelRequestFields`` such as ``max_tokens``.
+
+    Args:
+        api_host: Regional Kiro runtime host.
+
+    Returns:
+        Normalized root endpoint URL with exactly one trailing slash.
+    """
+    return f"{api_host.rstrip('/')}/"
+
+
 def generate_completion_id() -> str:
     """
     Generates a unique ID for chat completion.

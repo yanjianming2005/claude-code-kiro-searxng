@@ -340,6 +340,10 @@ TOOL_DESCRIPTION_MAX_LENGTH: int = int(os.getenv("TOOL_DESCRIPTION_MAX_LENGTH", 
 # Default: true (enabled)
 TRUNCATION_RECOVERY: bool = os.getenv("TRUNCATION_RECOVERY", "true").lower() in ("true", "1", "yes")
 
+# Recover large tool arguments through a second text-only inference pass when
+# Kiro closes the tool-call stream before transmitting the arguments.
+TOOL_CALL_TEXT_RECOVERY: bool = os.getenv("TOOL_CALL_TEXT_RECOVERY", "true").lower() in ("true", "1", "yes")
+
 # ==================================================================================================
 # Logging Settings
 # ==================================================================================================

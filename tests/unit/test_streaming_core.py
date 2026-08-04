@@ -2047,6 +2047,53 @@ class TestInterruptedBufferedToolCall:
         assert events[0].tool_use["_truncation_info"]["transport_error"] == "RemoteProtocolError"
 
     @pytest.mark.asyncio
+    async def test_repairs_buffered_tool_call_before_emitting(self):
+        """A configured text repairer replaces incomplete tool arguments."""
+        class BrokenByteIterator:
+            def __init__(self):
+                self.read_count = 0
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                self.read_count += 1
+                if self.read_count == 1:
+                    return b"tool-start"
+                raise httpx.RemoteProtocolError("incomplete chunked read")
+
+        repaired = {
+            "id": "toolu_partial",
+            "type": "function",
+            "function": {"name": "update_km", "arguments": '{"id":2180,"body":"complete"}'},
+        }
+        repairer = AsyncMock(return_value=repaired)
+        response = MagicMock()
+        response.extensions = {"kiro_tool_call_repairer": repairer}
+        response.aiter_bytes.return_value = BrokenByteIterator()
+
+        parser = MagicMock()
+        parser.feed.return_value = []
+        partial = {
+            "id": "toolu_partial",
+            "type": "function",
+            "function": {"name": "update_km", "arguments": "{}"},
+            "_truncation_detected": True,
+            "_truncation_info": {
+                "is_truncated": True,
+                "reason": "missing brace",
+                "size_bytes": 11,
+            },
+        }
+        parser.get_tool_calls.return_value = [partial]
+
+        with patch("kiro.streaming_core.AwsEventStreamParser", return_value=parser):
+            events = [event async for event in parse_kiro_stream(response)]
+
+        repairer.assert_awaited_once_with(partial)
+        assert events[0].tool_use == repaired
+
+    @pytest.mark.asyncio
     async def test_propagates_disconnect_without_buffered_tool_call(self):
         class BrokenByteIterator:
             def __aiter__(self):

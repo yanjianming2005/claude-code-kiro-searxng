@@ -1019,6 +1019,7 @@ class TestAnthropicHTTPClientSelection:
         
         # Setup mock
         mock_client_instance = AsyncMock()
+        mock_client_instance.configure_tool_call_repair = Mock()
         mock_client_instance.request_with_retry = AsyncMock(
             side_effect=Exception("Network blocked")
         )
@@ -1063,6 +1064,7 @@ class TestAnthropicHTTPClientSelection:
         
         # Setup mock
         mock_client_instance = AsyncMock()
+        mock_client_instance.configure_tool_call_repair = Mock()
         mock_client_instance.request_with_retry = AsyncMock(
             side_effect=Exception("Network blocked")
         )

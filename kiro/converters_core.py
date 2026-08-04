@@ -1409,7 +1409,8 @@ def build_kiro_payload(
     tools: Optional[List[UnifiedTool]],
     conversation_id: str,
     profile_arn: str,
-    thinking_config: ThinkingConfig
+    thinking_config: ThinkingConfig,
+    additional_model_request_fields: Optional[Dict[str, Any]] = None,
 ) -> KiroPayloadResult:
     """
     Builds complete payload for Kiro API from unified data.
@@ -1425,6 +1426,8 @@ def build_kiro_payload(
         conversation_id: Unique conversation ID
         profile_arn: AWS CodeWhisperer profile ARN
         thinking_config: Thinking configuration from API adapter
+        additional_model_request_fields: Native Kiro model parameters such as
+            max_tokens, thinking, output_config, or reasoning.
     
     Returns:
         KiroPayloadResult with payload and tool documentation
@@ -1569,6 +1572,7 @@ def build_kiro_payload(
     payload = {
         "conversationState": {
             "chatTriggerType": "MANUAL",
+            "agentTaskType": "vibe",
             "conversationId": conversation_id,
             "currentMessage": {
                 "userInputMessage": user_input_message
@@ -1583,6 +1587,11 @@ def build_kiro_payload(
     # Add profileArn
     if profile_arn:
         payload["profileArn"] = profile_arn
+
+    # The runtime root endpoint accepts model-specific inference controls at
+    # the request root. The legacy compatibility path rejects this field.
+    if additional_model_request_fields:
+        payload["additionalModelRequestFields"] = additional_model_request_fields
 
     # Payload size guard — auto-trim if enabled
     if AUTO_TRIM_PAYLOAD:

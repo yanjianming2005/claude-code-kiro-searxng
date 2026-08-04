@@ -94,6 +94,18 @@ class KiroHttpClient:
         self._shared_client = shared_client
         self._owns_client = shared_client is None
         self.client: Optional[httpx.AsyncClient] = shared_client
+        self._tool_repair_url: Optional[str] = None
+        self._tool_repair_payload: Optional[dict] = None
+
+    def configure_tool_call_repair(self, url: str, payload: dict) -> None:
+        """Enable text-only recovery for interrupted tool inputs.
+
+        Args:
+            url: Kiro runtime inference URL.
+            payload: Original Kiro request payload.
+        """
+        self._tool_repair_url = url
+        self._tool_repair_payload = payload
     
     async def _get_client(self, stream: bool = False) -> httpx.AsyncClient:
         """
@@ -236,6 +248,14 @@ class KiroHttpClient:
                 
                 # Check status
                 if response.status_code == 200:
+                    if self._tool_repair_url and self._tool_repair_payload:
+                        from kiro.tool_call_repair import attach_tool_call_repairer
+                        attach_tool_call_repairer(
+                            response,
+                            self.auth_manager,
+                            self._tool_repair_url,
+                            self._tool_repair_payload,
+                        )
                     return response
                 
                 # 403 - token expired, refresh and retry

@@ -45,6 +45,44 @@ from kiro.converters_core import (
 )
 
 
+KIRO_EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
+
+
+def build_anthropic_model_request_fields(request: AnthropicMessagesRequest) -> Dict[str, Any]:
+    """Build native Kiro inference controls from an Anthropic request.
+
+    Anthropic's ``enabled`` thinking mode is normalized to Kiro's native
+    ``adaptive`` mode. Explicit thinking token budgets are not forwarded
+    because Kiro's Claude schema does not accept them.
+
+    Args:
+        request: Validated Anthropic Messages request.
+
+    Returns:
+        Native Kiro model request fields.
+    """
+    fields: Dict[str, Any] = {"max_tokens": request.max_tokens}
+
+    if request.thinking:
+        thinking_type = request.thinking.get("type")
+        if thinking_type == "enabled":
+            thinking_type = "adaptive"
+        if thinking_type in {"adaptive", "disabled"}:
+            thinking: Dict[str, Any] = {"type": thinking_type}
+            display = request.thinking.get("display")
+            if display in {"summarized", "omitted"}:
+                thinking["display"] = display
+            fields["thinking"] = thinking
+
+    output_config = getattr(request, "output_config", None)
+    if isinstance(output_config, dict):
+        effort = output_config.get("effort")
+        if effort in KIRO_EFFORT_LEVELS:
+            fields["output_config"] = {"effort": effort}
+
+    return fields
+
+
 def convert_anthropic_content_to_text(content: Any) -> str:
     """
     Extracts text content from Anthropic message content.
@@ -500,6 +538,7 @@ def anthropic_to_kiro(
         conversation_id=conversation_id,
         profile_arn=profile_arn,
         thinking_config=thinking_config,
+        additional_model_request_fields=build_anthropic_model_request_fields(request),
     )
 
     return result.payload

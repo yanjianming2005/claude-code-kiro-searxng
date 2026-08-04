@@ -48,6 +48,7 @@ from kiro.config import (
 )
 from kiro.thinking_parser import ThinkingParser
 from kiro.truncation_recovery import TRANSPORT_INTERRUPTION_CAUSE
+from kiro.tool_call_repair import REPAIRER_EXTENSION_KEY
 
 if TYPE_CHECKING:
     from kiro.cache import ModelInfoCache
@@ -251,8 +252,19 @@ async def parse_kiro_stream(
                 len(partial_tool_calls),
                 str(exc) or type(exc).__name__,
             )
+            repairer = (
+                response.extensions.get(REPAIRER_EXTENSION_KEY)
+                if isinstance(response.extensions, dict)
+                else None
+            )
             for tool_call in partial_tool_calls:
-                yield KiroEvent(type="tool_use", tool_use=tool_call)
+                repaired_tool_call = None
+                if callable(repairer) and tool_call.get("_truncation_detected"):
+                    repaired_tool_call = await repairer(tool_call)
+                yield KiroEvent(
+                    type="tool_use",
+                    tool_use=repaired_tool_call or tool_call,
+                )
             return
         raise
     except GeneratorExit:

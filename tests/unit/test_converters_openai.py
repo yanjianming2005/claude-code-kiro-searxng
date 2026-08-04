@@ -19,6 +19,7 @@ from kiro.converters_openai import (
     _extract_images_from_tool_message,
     reasoning_effort_to_budget,
     extract_thinking_config_from_openai,
+    build_openai_model_request_fields,
 )
 from kiro.models_openai import ChatMessage, ChatCompletionRequest, Tool, ToolFunction
 
@@ -689,6 +690,39 @@ class TestBuildKiroPayload:
         assert result["conversationState"]["conversationId"] == "conv-123"
         assert "currentMessage" in result["conversationState"]
         assert result["profileArn"] == "arn:aws:test"
+        assert result["conversationState"]["agentTaskType"] == "vibe"
+
+    def test_forwards_claude_output_controls(self):
+        """Map OpenAI output controls to Kiro's Claude schema."""
+        request = ChatCompletionRequest(
+            model="claude-opus-5",
+            messages=[ChatMessage(role="user", content="Hello")],
+            max_tokens=128000,
+            reasoning_effort="high",
+        )
+
+        fields = build_openai_model_request_fields(request, "claude-opus-5")
+
+        assert fields == {
+            "max_tokens": 128000,
+            "output_config": {"effort": "high"},
+        }
+
+    def test_forwards_gpt_reasoning_controls(self):
+        """Map OpenAI reasoning effort to Kiro's GPT schema."""
+        request = ChatCompletionRequest(
+            model="gpt-5.6-sol",
+            messages=[ChatMessage(role="user", content="Hello")],
+            max_completion_tokens=32000,
+            reasoning_effort="xhigh",
+        )
+
+        fields = build_openai_model_request_fields(request, "gpt-5.6-sol")
+
+        assert fields == {
+            "max_tokens": 32000,
+            "reasoning": {"effort": "xhigh"},
+        }
     
     def test_includes_system_prompt_in_first_message(self):
         """

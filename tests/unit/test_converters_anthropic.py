@@ -25,6 +25,7 @@ from kiro.converters_anthropic import (
     convert_anthropic_tools,
     anthropic_to_kiro,
     extract_thinking_config_from_anthropic,
+    build_anthropic_model_request_fields,
 )
 from kiro.converters_core import UnifiedMessage, UnifiedTool
 from kiro.models_anthropic import (
@@ -1470,6 +1471,40 @@ class TestAnthropicToKiro:
         assert "currentMessage" in result["conversationState"]
         assert "userInputMessage" in result["conversationState"]["currentMessage"]
         assert result["profileArn"] == "arn:aws:test"
+        assert result["conversationState"]["agentTaskType"] == "vibe"
+        assert result["additionalModelRequestFields"] == {"max_tokens": 1024}
+
+    def test_forwards_native_output_controls(self):
+        """Forward output length, adaptive thinking, and effort to Kiro."""
+        request = AnthropicMessagesRequest(
+            model="claude-opus-5",
+            messages=[AnthropicMessage(role="user", content="Hello")],
+            max_tokens=128000,
+            thinking={"type": "adaptive", "display": "summarized"},
+            output_config={"effort": "high"},
+        )
+
+        fields = build_anthropic_model_request_fields(request)
+
+        assert fields == {
+            "max_tokens": 128000,
+            "thinking": {"type": "adaptive", "display": "summarized"},
+            "output_config": {"effort": "high"},
+        }
+
+    def test_normalizes_enabled_thinking_and_drops_budget(self):
+        """Kiro receives adaptive thinking instead of Anthropic budget mode."""
+        request = AnthropicMessagesRequest(
+            model="claude-opus-5",
+            messages=[AnthropicMessage(role="user", content="Hello")],
+            max_tokens=64000,
+            thinking={"type": "enabled", "budget_tokens": 16000},
+        )
+
+        assert build_anthropic_model_request_fields(request) == {
+            "max_tokens": 64000,
+            "thinking": {"type": "adaptive"},
+        }
 
     def test_includes_system_prompt(self):
         """

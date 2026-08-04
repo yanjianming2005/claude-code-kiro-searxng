@@ -52,7 +52,7 @@ from kiro.streaming_anthropic import (
 )
 from kiro.http_client import KiroHttpClient
 from kiro.streaming_core import collect_with_stream_body_retry
-from kiro.utils import generate_conversation_id
+from kiro.utils import generate_conversation_id, get_kiro_inference_url
 from kiro.tokenizer import estimate_request_tokens
 from kiro.config import WEB_SEARCH_ENABLED
 from kiro.mcp_tools import handle_native_web_search
@@ -408,12 +408,13 @@ async def messages(
                 logger.warning(f"Failed to log Kiro request: {e}")
             
             # Create HTTP client
-            url = f"{auth_manager.api_host}/generateAssistantResponse"
+            url = get_kiro_inference_url(auth_manager.api_host)
             logger.debug(f"Kiro API URL: {url} (account: {account.id})")
             
             # Kiro always returns an event stream, including for downstream
             # non-streaming requests. Isolate every inference connection.
             http_client = KiroHttpClient(auth_manager, shared_client=None)
+            http_client.configure_tool_call_repair(url, kiro_payload)
             
             # Prepare data for token counting
             messages_for_tokenizer = [msg.model_dump() for msg in request_data.messages]
@@ -729,10 +730,11 @@ async def messages(
     
     # Kiro always returns an event stream. A per-request client prevents an
     # interrupted body from contaminating a shared connection pool.
-    url = f"{auth_manager.api_host}/generateAssistantResponse"
+    url = get_kiro_inference_url(auth_manager.api_host)
     logger.debug(f"Kiro API URL: {url}")
     
     http_client = KiroHttpClient(auth_manager, shared_client=None)
+    http_client.configure_tool_call_repair(url, kiro_payload)
     
     # Prepare data for token counting
     # Convert Pydantic models to dicts for tokenizer

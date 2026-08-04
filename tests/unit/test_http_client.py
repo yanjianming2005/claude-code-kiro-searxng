@@ -17,6 +17,17 @@ from fastapi import HTTPException
 from kiro.http_client import KiroHttpClient
 from kiro.auth import KiroAuthManager
 from kiro.config import MAX_RETRIES, BASE_RETRY_DELAY, FIRST_TOKEN_MAX_RETRIES, STREAMING_READ_TIMEOUT
+from kiro.utils import get_kiro_inference_url
+
+
+def test_kiro_inference_url_uses_runtime_root():
+    """Native model request fields require the runtime host root path."""
+    assert get_kiro_inference_url("https://runtime.us-east-1.kiro.dev") == (
+        "https://runtime.us-east-1.kiro.dev/"
+    )
+    assert get_kiro_inference_url("https://runtime.us-east-1.kiro.dev/") == (
+        "https://runtime.us-east-1.kiro.dev/"
+    )
 
 
 @pytest.fixture

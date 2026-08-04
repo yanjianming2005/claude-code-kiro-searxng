@@ -48,6 +48,37 @@ from kiro.converters_core import (
 )
 
 
+KIRO_EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
+
+
+def build_openai_model_request_fields(
+    request: ChatCompletionRequest,
+    model_id: str,
+) -> Dict[str, Any]:
+    """Build native Kiro inference controls from an OpenAI request.
+
+    Args:
+        request: Validated OpenAI chat completion request.
+        model_id: Resolved Kiro model identifier.
+
+    Returns:
+        Native Kiro model request fields, or an empty dictionary.
+    """
+    fields: Dict[str, Any] = {}
+    max_tokens = request.max_tokens or request.max_completion_tokens
+    if max_tokens is not None:
+        fields["max_tokens"] = max_tokens
+
+    effort = request.reasoning_effort
+    if effort in KIRO_EFFORT_LEVELS:
+        if model_id.startswith("claude-"):
+            fields["output_config"] = {"effort": effort}
+        elif model_id.startswith("gpt-"):
+            fields["reasoning"] = {"effort": effort}
+
+    return fields
+
+
 # ==================================================================================================
 # OpenAI-specific Message Processing
 # ==================================================================================================
@@ -440,7 +471,11 @@ def build_kiro_payload(
         tools=unified_tools,
         conversation_id=conversation_id,
         profile_arn=profile_arn,
-        thinking_config=thinking_config
+        thinking_config=thinking_config,
+        additional_model_request_fields=build_openai_model_request_fields(
+            request_data,
+            model_id,
+        ),
     )
     
     return result.payload
