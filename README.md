@@ -89,8 +89,8 @@ export ANTHROPIC_BASE_URL="http://127.0.0.1:8767"
 export ANTHROPIC_API_KEY="安装程序生成的本机密钥"
 unset ANTHROPIC_AUTH_TOKEN
 
-export ANTHROPIC_MODEL="claude-opus-4-6"
-export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-opus-4-6"
+export ANTHROPIC_MODEL="claude-opus-5"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-opus-5"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-sonnet-4-6"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4-5-20251001"
 ```
@@ -124,11 +124,11 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4-5-20251001"
     },
     {
       "name": "ANTHROPIC_MODEL",
-      "value": "claude-opus-4-6"
+      "value": "claude-opus-5"
     },
     {
       "name": "ANTHROPIC_DEFAULT_OPUS_MODEL",
-      "value": "claude-opus-4-6"
+      "value": "claude-opus-5"
     },
     {
       "name": "ANTHROPIC_DEFAULT_SONNET_MODEL",
@@ -215,8 +215,8 @@ export ANTHROPIC_BASE_URL="http://192.168.0.88:8767"
 export ANTHROPIC_API_KEY="服务端 .env 中的 PROXY_API_KEY"
 unset ANTHROPIC_AUTH_TOKEN
 
-export ANTHROPIC_MODEL="claude-opus-4-6"
-export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-opus-4-6"
+export ANTHROPIC_MODEL="claude-opus-5"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-opus-5"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-sonnet-4-6"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4-5-20251001"
 ```
