@@ -350,11 +350,9 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
             url = f"{auth_manager.api_host}/generateAssistantResponse"
             logger.debug(f"Kiro API URL: {url} (account: {account.id})")
             
-            if request_data.stream:
-                http_client = KiroHttpClient(auth_manager, shared_client=None)
-            else:
-                shared_client = request.app.state.http_client
-                http_client = KiroHttpClient(auth_manager, shared_client=shared_client)
+            # Kiro always returns an event stream, including for downstream
+            # non-streaming requests. Isolate every inference connection.
+            http_client = KiroHttpClient(auth_manager, shared_client=None)
             
             try:
                 # Make request to Kiro API
@@ -608,20 +606,12 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
     except Exception as e:
         logger.warning(f"Failed to log Kiro request: {e}")
     
-    # Create HTTP client with retry logic
-    # For streaming: use per-request client to avoid CLOSE_WAIT leak on VPN disconnect (issue #54)
-    # For non-streaming: use shared client for connection pooling
+    # Kiro always returns an event stream. A per-request client prevents an
+    # interrupted body from contaminating a shared connection pool.
     url = f"{auth_manager.api_host}/generateAssistantResponse"
     logger.debug(f"Kiro API URL: {url}")
     
-    if request_data.stream:
-        # Streaming mode: per-request client prevents orphaned connections
-        # when network interface changes (VPN disconnect/reconnect)
-        http_client = KiroHttpClient(auth_manager, shared_client=None)
-    else:
-        # Non-streaming mode: shared client for efficient connection reuse
-        shared_client = request.app.state.http_client
-        http_client = KiroHttpClient(auth_manager, shared_client=shared_client)
+    http_client = KiroHttpClient(auth_manager, shared_client=None)
     try:
         # Make request to Kiro API (for both streaming and non-streaming modes)
         # Important: we wait for Kiro response BEFORE returning StreamingResponse,

@@ -230,6 +230,22 @@ async def parse_kiro_stream(
             
     except FirstTokenTimeoutError:
         raise
+    except RETRYABLE_STREAM_EXCEPTIONS as exc:
+        # Tool calls are buffered and normally emitted only when the upstream
+        # stream ends. Preserve a partial large tool call on disconnect so the
+        # truncation-recovery system can report it and let the model adapt.
+        partial_tool_calls = parser.get_tool_calls()
+        if partial_tool_calls:
+            logger.warning(
+                "Upstream stream interrupted with {} buffered tool call(s); "
+                "emitting them through truncation recovery: {}",
+                len(partial_tool_calls),
+                str(exc) or type(exc).__name__,
+            )
+            for tool_call in partial_tool_calls:
+                yield KiroEvent(type="tool_use", tool_use=tool_call)
+            return
+        raise
     except GeneratorExit:
         logger.debug("Client disconnected (GeneratorExit)")
         raise

@@ -1999,3 +1999,62 @@ class TestCollectWithStreamBodyRetry:
             )
 
         retry_response.aclose.assert_awaited_once()
+
+
+class TestInterruptedBufferedToolCall:
+    """Tests recovery of tool calls buffered before an upstream disconnect."""
+
+    @pytest.mark.asyncio
+    async def test_emits_buffered_truncated_tool_call(self):
+        class BrokenByteIterator:
+            def __init__(self):
+                self.read_count = 0
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                self.read_count += 1
+                if self.read_count == 1:
+                    return b"tool-start-and-partial-input"
+                raise httpx.RemoteProtocolError("incomplete chunked read")
+
+        response = MagicMock()
+        response.aiter_bytes.return_value = BrokenByteIterator()
+
+        parser = MagicMock()
+        parser.feed.return_value = []
+        parser.get_tool_calls.return_value = [{
+            "id": "toolu_partial",
+            "type": "function",
+            "function": {"name": "update_km", "arguments": "{}"},
+            "_truncation_detected": True,
+            "_truncation_info": {
+                "is_truncated": True,
+                "reason": "missing 1 closing brace(s)",
+                "size_bytes": 8192,
+            },
+        }]
+
+        with patch("kiro.streaming_core.AwsEventStreamParser", return_value=parser):
+            events = [event async for event in parse_kiro_stream(response)]
+
+        assert len(events) == 1
+        assert events[0].type == "tool_use"
+        assert events[0].tool_use["_truncation_detected"] is True
+
+    @pytest.mark.asyncio
+    async def test_propagates_disconnect_without_buffered_tool_call(self):
+        class BrokenByteIterator:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise httpx.RemoteProtocolError("incomplete chunked read")
+
+        response = MagicMock()
+        response.aiter_bytes.return_value = BrokenByteIterator()
+
+        with pytest.raises(httpx.RemoteProtocolError):
+            async for _ in parse_kiro_stream(response):
+                pass

@@ -1049,17 +1049,17 @@ class TestAnthropicHTTPClientSelection:
         print("✅ Anthropic streaming correctly uses per-request client")
     
     @patch('kiro.routes_anthropic.KiroHttpClient')
-    def test_non_streaming_uses_shared_client(
+    def test_non_streaming_uses_per_request_client(
         self,
         mock_kiro_http_client_class,
         test_client,
         valid_proxy_api_key
     ):
         """
-        What it does: Verifies non-streaming requests use shared HTTP client.
-        Purpose: Ensure connection pooling for non-streaming requests.
+        What it does: Verifies non-streaming requests use a per-request client.
+        Purpose: The upstream Kiro response is always an event stream.
         """
-        print("\n--- Test: Anthropic non-streaming uses shared client ---")
+        print("\n--- Test: Anthropic non-streaming uses per-request client ---")
         
         # Setup mock
         mock_client_instance = AsyncMock()
@@ -1084,13 +1084,13 @@ class TestAnthropicHTTPClientSelection:
         except Exception:
             pass
         
-        print("Checking: KiroHttpClient(shared_client=app.state.http_client)...")
+        print("Checking: KiroHttpClient(shared_client=None)...")
         assert mock_kiro_http_client_class.called
         call_args = mock_kiro_http_client_class.call_args
         print(f"Call args: {call_args}")
-        assert call_args[1]['shared_client'] is not None, \
-            "Non-streaming should use shared client"
-        print("✅ Anthropic non-streaming correctly uses shared client")
+        assert call_args[1]['shared_client'] is None, \
+            "Upstream event streams should use a per-request client"
+        print("✅ Anthropic non-streaming correctly uses per-request client")
 
 
 # =============================================================================
