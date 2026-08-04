@@ -101,8 +101,10 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4-5-20251001"
 
 如果从 Dock/Finder 启动 VS Code，它通常不会继承终端里的环境变量。可在 Claude Code 插件设置中加入：
 
-```json
+```jsonc
 {
+  "claudeCode.disableLoginPrompt": true,
+
   "claudeCode.environmentVariables": [
     {
       "name": "ANTHROPIC_BASE_URL",
@@ -110,7 +112,15 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4-5-20251001"
     },
     {
       "name": "ANTHROPIC_API_KEY",
+      "value": ""
+    },
+    {
+      "name": "ANTHROPIC_AUTH_TOKEN",
       "value": "复制 .env 中的 PROXY_API_KEY"
+    },
+    {
+      "name": "CLAUDE_CODE_SKIP_AUTH_LOGIN",
+      "value": "1"
     },
     {
       "name": "ANTHROPIC_MODEL",
@@ -127,12 +137,23 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4-5-20251001"
     {
       "name": "ANTHROPIC_DEFAULT_HAIKU_MODEL",
       "value": "claude-haiku-4-5-20251001"
+    },
+    {
+      "name": "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+      "value": "1"
     }
   ]
 }
 ```
 
-如果仍然显示 Claude 登录页，彻底退出 VS Code 后重新打开，并确认插件设置里没有 `ANTHROPIC_AUTH_TOKEN`。
+终端 Claude Code 和 VS Code 插件的认证写法不同：
+
+- 终端 CLI 使用 `ANTHROPIC_API_KEY`，并 `unset ANTHROPIC_AUTH_TOKEN`。
+- VS Code Claude Code 2.1.221 的 Agent SDK 宿主模式使用 `ANTHROPIC_AUTH_TOKEN`。
+- VS Code 中把 `ANTHROPIC_API_KEY` 显式设为空字符串，是为了覆盖登录 Shell 从 `~/.zshrc` 继承来的非空值；不要删除这个空值，也不要填入真实 Key。
+- `ANTHROPIC_AUTH_TOKEN` 的值必须与服务端 `.env` 中的 `PROXY_API_KEY` 完全相同。
+
+保存后使用 `Cmd+Q` 完全退出 VS Code，再重新打开。只执行 `Developer: Reload Window` 有时不能清除旧 Extension Host 的环境和认证缓存。
 
 ## 日常命令
 
@@ -251,6 +272,33 @@ docker compose ps
 ```
 
 确认 `8767` 和 `8768` 没有被其他程序占用。
+
+### VS Code 仍跳转 Claude 登录页
+
+按下面顺序处理：
+
+1. 执行 `claude auth logout`，清除已经失效但优先级更高的 Claude OAuth 凭据。
+2. 确认 VS Code 设置包含 `claudeCode.disableLoginPrompt: true` 和 `CLAUDE_CODE_SKIP_AUTH_LOGIN=1`。
+3. 确认 `ANTHROPIC_API_KEY` 是空字符串，真实 Gateway Key 只写入 `ANTHROPIC_AUTH_TOKEN`。
+4. 使用 `Cmd+Q` 完全退出 VS Code，再重新打开。
+
+如果日志出现 `OAuth refresh token is no longer valid` 或 `OAuth tokens found in secure storage`，说明旧 OAuth 尚未清理干净。
+
+### `Could not resolve authentication method`
+
+这是 VS Code 2.1.221 Agent SDK 宿主模式没有采用 `ANTHROPIC_API_KEY` 的典型错误。此时请求通常还没有到达 Gateway，因此重启 Gateway 没有作用。
+
+按上面的 VS Code 配置改用 `ANTHROPIC_AUTH_TOKEN`，并将 `ANTHROPIC_API_KEY` 显式置空。可以用以下方式区分故障位置：
+
+```bash
+# 客户端查看 Claude Code 扩展日志
+# VS Code: View -> Output -> Claude Code
+
+# 服务端查看 Gateway 是否收到 POST /v1/messages
+./scripts/logs.sh
+```
+
+如果客户端报错时服务端没有对应的 `POST /v1/messages`，问题在 VS Code 本地认证；如果已经收到请求并返回 401，再检查 `ANTHROPIC_AUTH_TOKEN` 与 `PROXY_API_KEY` 是否一致。
 
 ### `Web search failed`
 
