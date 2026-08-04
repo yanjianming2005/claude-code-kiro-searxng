@@ -2042,6 +2042,9 @@ class TestInterruptedBufferedToolCall:
         assert len(events) == 1
         assert events[0].type == "tool_use"
         assert events[0].tool_use["_truncation_detected"] is True
+        assert events[0].tool_use["_truncation_info"]["cause"] == "transport_interruption"
+        assert events[0].tool_use["_truncation_info"]["retryable"] is True
+        assert events[0].tool_use["_truncation_info"]["transport_error"] == "RemoteProtocolError"
 
     @pytest.mark.asyncio
     async def test_propagates_disconnect_without_buffered_tool_call(self):

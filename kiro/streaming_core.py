@@ -47,6 +47,7 @@ from kiro.config import (
     FAKE_REASONING_HANDLING,
 )
 from kiro.thinking_parser import ThinkingParser
+from kiro.truncation_recovery import TRANSPORT_INTERRUPTION_CAUSE
 
 if TYPE_CHECKING:
     from kiro.cache import ModelInfoCache
@@ -236,6 +237,14 @@ async def parse_kiro_stream(
         # truncation-recovery system can report it and let the model adapt.
         partial_tool_calls = parser.get_tool_calls()
         if partial_tool_calls:
+            for tool_call in partial_tool_calls:
+                truncation_info = tool_call.get("_truncation_info")
+                if tool_call.get("_truncation_detected") and isinstance(truncation_info, dict):
+                    truncation_info.update({
+                        "cause": TRANSPORT_INTERRUPTION_CAUSE,
+                        "retryable": True,
+                        "transport_error": type(exc).__name__,
+                    })
             logger.warning(
                 "Upstream stream interrupted with {} buffered tool call(s); "
                 "emitting them through truncation recovery: {}",

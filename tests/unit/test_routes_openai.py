@@ -1038,7 +1038,7 @@ class TestTruncationRecoveryMessageModification:
         modified_msg = modified_messages[0]
         print(f"Content: {modified_msg.content[:100]}...")
         
-        assert "[API Limitation]" in modified_msg.content
+        assert "[Incomplete Upstream Tool Call]" in modified_msg.content
         assert "Missing parameter error" in modified_msg.content
         assert "---" in modified_msg.content
     
@@ -1117,7 +1117,7 @@ class TestTruncationRecoveryMessageModification:
         
         print("Checking: Content modified in new object...")
         assert modified_msg.content != original_msg.content
-        assert "[API Limitation]" in modified_msg.content
+        assert "[Incomplete Upstream Tool Call]" in modified_msg.content
 
 
 # =============================================================================
@@ -1203,7 +1203,7 @@ class TestTruncationRecoveryEdgeCases:
         assert len(modified_messages) == 1
         
         print("Checking: Truncation notice still prepended...")
-        assert "[API Limitation]" in modified_messages[0].content
+        assert "[Incomplete Upstream Tool Call]" in modified_messages[0].content
         
         print("Checking: Empty original content preserved...")
         assert "Original tool result:\n" in modified_messages[0].content
@@ -1274,7 +1274,7 @@ class TestTruncationRecoveryEdgeCases:
             
             print("Checking: No modification occurred...")
             assert modified_messages[0].content == "Result"
-            assert "[API Limitation]" not in modified_messages[0].content
+            assert "[Incomplete Upstream Tool Call]" not in modified_messages[0].content
         
         print("Checking: Cache entry still exists (not cleaned up)...")
         # Note: get_tool_truncation() was NOT called, so entry should still be there

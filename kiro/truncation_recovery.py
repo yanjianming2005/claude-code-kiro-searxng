@@ -23,14 +23,18 @@ Truncation recovery system for handling upstream Kiro API limitations.
 Generates synthetic messages to inform the model about truncation.
 ONLY activates when truncation is actually detected.
 
-This module addresses Issue #56 - Kiro API truncates large tool call payloads
-and content mid-stream. Since this is an upstream limitation that cannot be
-prevented, we inform the model about the truncation so it can adapt its approach.
+This module addresses incomplete Kiro responses, including malformed tool
+arguments and interrupted response bodies. Recovery messages distinguish a
+temporary transport interruption from other incomplete output so the model
+does not infer a payload-size limit without evidence.
 """
 
 from typing import Dict, Any
 
 from loguru import logger
+
+
+TRANSPORT_INTERRUPTION_CAUSE = "transport_interruption"
 
 
 def should_inject_recovery() -> bool:
@@ -52,10 +56,10 @@ def generate_truncation_tool_result(
     """
     Generate synthetic tool_result for truncated tool call.
     
-    Message is carefully worded to:
-    - Acknowledge API limitation (not model's fault)
-    - Warn against repeating same operation
-    - NOT give specific instructions (avoid micro-steps)
+    Message is selected from the recorded failure cause. Transport failures
+    explicitly permit one retry and state that no payload-size limit was
+    established. Other incomplete output uses conservative wording and does
+    not claim a specific upstream size limit.
     
     Args:
         tool_name: Name of the truncated tool
@@ -69,12 +73,24 @@ def generate_truncation_tool_result(
         >>> generate_truncation_tool_result("Write", "call_123", {"size_bytes": 5000, "reason": "missing 2 closing braces"})
         {'type': 'tool_result', 'tool_use_id': 'call_123', 'content': '[API Limitation] ...', 'is_error': True}
     """
-    content = (
-        "[API Limitation] Your tool call was truncated by the upstream API due to output size limits.\n\n"
-        "If the tool result below shows an error or unexpected behavior, this is likely a CONSEQUENCE of the truncation, "
-        "not the root cause. The tool call itself was cut off before it could be fully transmitted.\n\n"
-        "Repeating the exact same operation will be truncated again. Consider adapting your approach."
-    )
+    if truncation_info.get("cause") == TRANSPORT_INTERRUPTION_CAUSE:
+        content = (
+            "[Temporary Upstream Transport Error] The response connection closed before this tool call's arguments "
+            "were fully transmitted. The tool result below is a consequence of the interrupted transfer, not a "
+            "failure reported by the tool itself.\n\n"
+            "This event does not establish a tool-call or payload-size limit. Retry the same operation once through "
+            "the original tool with the complete arguments. Do not bypass the tool or call its underlying service "
+            "directly solely because of this transport interruption. If one retry is interrupted in the same way, "
+            "then use a smaller or chunked operation only if the original tool supports it."
+        )
+    else:
+        content = (
+            "[Incomplete Upstream Tool Call] The upstream response ended with incomplete tool arguments. The tool "
+            "result below is a consequence of those missing arguments, not a failure reported by the tool itself.\n\n"
+            "No specific payload-size limit can be inferred from this event. Retry the original tool once. If the "
+            "same operation fails deterministically again, adapt using smaller or chunked operations supported by "
+            "that tool. Do not bypass the tool's normal interface solely because of this error."
+        )
     
     logger.debug(
         f"Generated synthetic tool_result for truncated tool '{tool_name}' "

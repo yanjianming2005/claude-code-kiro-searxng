@@ -431,12 +431,13 @@ class AwsEventStreamParser:
                         from kiro.config import TRUNCATION_RECOVERY
                         tool_id = self.current_tool_call.get('id', 'unknown')
                         
-                        # Clear error message: this is Kiro API's fault, not ours
+                        # The parser can prove that JSON is incomplete, but not
+                        # whether size, transport, or another upstream condition
+                        # caused it. The streaming layer adds transport evidence.
                         logger.error(
-                            f"Tool call truncated by Kiro API: "
+                            f"Incomplete tool call received from Kiro API: "
                             f"tool='{tool_name}', id={tool_id}, size={truncation_info['size_bytes']} bytes, "
                             f"reason={truncation_info['reason']}. "
-                            f"This is a Kiro API limitation. "
                             f"{'Model will be notified automatically about truncation.' if TRUNCATION_RECOVERY else 'Set TRUNCATION_RECOVERY=true in .env to auto-notify model about truncation.'}"
                         )
                     else:

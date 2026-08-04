@@ -43,6 +43,7 @@ class TestRecoveryEnabledCheck:
             
             result = should_inject_recovery()
             print(f"TRUNCATION_RECOVERY=true → should_inject_recovery() = {result}")
+        reload(config)
         
         # Assert
         assert result is True, "Should return True when TRUNCATION_RECOVERY=true"
@@ -67,6 +68,7 @@ class TestRecoveryEnabledCheck:
             
             result = should_inject_recovery()
             print(f"TRUNCATION_RECOVERY=false → should_inject_recovery() = {result}")
+        reload(config)
         
         # Assert
         assert result is False, "Should return False when TRUNCATION_RECOVERY=false"
@@ -109,18 +111,18 @@ class TestToolTruncationMessage:
         assert len(content) > 0, "Content should not be empty"
         
         # Assert - Key phrases present
-        assert "[API Limitation]" in content, "Should contain [API Limitation] marker"
-        assert "truncated" in content.lower(), "Should mention truncation"
-        assert "upstream api" in content.lower(), "Should mention upstream API"
-        assert "output size limits" in content.lower(), "Should mention size limits"
+        assert "[Incomplete Upstream Tool Call]" in content
+        assert "incomplete" in content.lower()
+        assert "upstream" in content.lower()
+        assert "no specific payload-size limit" in content.lower()
         
         # Assert - Universal formulation (conditional language)
         assert "if" in content.lower() or "likely" in content.lower(), "Should use conditional language"
         assert "consequence" in content.lower(), "Should explain error is consequence"
         
         # Assert - Warning about repetition
-        assert "repeating" in content.lower(), "Should warn about repeating"
-        assert "adapt" in content.lower(), "Should suggest adaptation"
+        assert "retry the original tool once" in content.lower()
+        assert "do not bypass" in content.lower()
         
         print("✅ Test passed: Tool truncation message format correct")
     
@@ -152,7 +154,7 @@ class TestToolTruncationMessage:
             
             assert result["type"] == "tool_result", f"Should work for {tool_name}"
             assert result["tool_use_id"] == tool_id, f"Should preserve tool_id for {tool_name}"
-            assert "[API Limitation]" in result["content"], f"Should have marker for {tool_name}"
+            assert "[Incomplete Upstream Tool Call]" in result["content"]
         
         print("✅ Test passed: Works for all tool types")
     
@@ -189,7 +191,29 @@ class TestToolTruncationMessage:
             assert phrase not in content, f"Should NOT contain specific instruction: '{phrase}'"
         
         # Assert - Should contain general guidance
-        assert "adapt" in content or "consider" in content, "Should suggest general adaptation"
+        assert "adapt" in content or "retry" in content, "Should suggest recovery"
+
+    def test_transport_interruption_allows_retry_without_claiming_size_limit(self):
+        """Interrupted chunked bodies must not be presented as payload limits."""
+        result = generate_truncation_tool_result(
+            tool_name="update_article",
+            tool_use_id="tool_transport",
+            truncation_info={
+                "size_bytes": 11,
+                "reason": "missing 1 closing brace",
+                "cause": "transport_interruption",
+                "retryable": True,
+                "transport_error": "RemoteProtocolError",
+            },
+        )
+
+        content = result["content"].lower()
+        assert "temporary upstream transport error" in content
+        assert "does not establish a tool-call or payload-size limit" in content
+        assert "retry the same operation once" in content
+        assert "original tool" in content
+        assert "do not bypass" in content
+        assert "due to output size limits" not in content
         
         print("✅ Test passed: No specific instructions (universal formulation)")
 
@@ -310,9 +334,9 @@ class TestMessageIntegration:
         print(f"Combined preview: {combined[:100]}...")
         
         # Assert
-        assert "[API Limitation]" in combined, "Should contain synthetic message"
+        assert "[Incomplete Upstream Tool Call]" in combined
         assert original_content in combined, "Should contain original content"
-        assert combined.index("[API Limitation]") < combined.index(original_content), \
+        assert combined.index("[Incomplete Upstream Tool Call]") < combined.index(original_content), \
             "Synthetic message should come before original"
         
         print("✅ Test passed: Prepending works correctly")

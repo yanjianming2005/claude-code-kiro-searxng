@@ -1186,7 +1186,7 @@ class TestTruncationRecoveryMessageModification:
         content = self._get_block_value(modified_block, "content")
         print(f"Content: {content[:100]}...")
         
-        assert "[API Limitation]" in content
+        assert "[Incomplete Upstream Tool Call]" in content
         assert "Missing parameter error" in content
         assert "---" in content
     
@@ -1264,7 +1264,7 @@ class TestTruncationRecoveryMessageModification:
         content = self._get_block_value(modified_block, "content")
         print(f"Content: {content[:100]}...")
         
-        assert "[API Limitation]" in content
+        assert "[Incomplete Upstream Tool Call]" in content
         assert "Missing parameter error" in content
         assert "---" in content
     
@@ -1345,7 +1345,7 @@ class TestTruncationRecoveryMessageModification:
         tool_result_block = modified_msg.content[1]
         assert self._get_block_value(tool_result_block, "type") == "tool_result"
         tool_content = self._get_block_value(tool_result_block, "content")
-        assert "[API Limitation]" in tool_content
+        assert "[Incomplete Upstream Tool Call]" in tool_content
         assert "Error" in tool_content
         
         print("Checking: Order preserved...")
@@ -1475,7 +1475,7 @@ class TestTruncationRecoveryMessageModification:
         print("Checking: Content modified in new object...")
         modified_content = self._get_block_value(modified_msg.content[0], "content")
         assert modified_content != original_content
-        assert "[API Limitation]" in modified_content
+        assert "[Incomplete Upstream Tool Call]" in modified_content
 
 
 # =============================================================================
