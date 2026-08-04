@@ -32,7 +32,7 @@ to convert Kiro events to their respective SSE formats.
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Awaitable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Awaitable, Dict, List, Optional, Tuple, TypeVar
 
 import httpx
 from loguru import logger
@@ -120,6 +120,8 @@ RETRYABLE_STREAM_EXCEPTIONS = (
     httpx.ReadError,
     httpx.ReadTimeout,
 )
+
+CollectionResult = TypeVar("CollectionResult")
 
 
 # ==================================================================================================
@@ -376,6 +378,85 @@ def calculate_tokens_from_context_usage(
 # ==================================================================================================
 # First Token Retry Logic
 # ==================================================================================================
+
+async def collect_with_stream_body_retry(
+    make_request: Callable[[], Awaitable[httpx.Response]],
+    collector: Callable[[httpx.Response], Awaitable[CollectionResult]],
+    initial_response: httpx.Response,
+    body_max_retries: int = STREAM_BODY_MAX_RETRIES,
+    body_retry_base_delay: float = STREAM_BODY_RETRY_BASE_DELAY,
+    on_http_error: Optional[Callable[[int, str], Exception]] = None,
+) -> CollectionResult:
+    """Collect a non-streaming response with safe interrupted-body retries.
+
+    A non-streaming client has not observed any output until collection is
+    complete, so replaying the complete inference request is safe. Every
+    failed response is closed before retrying.
+
+    Args:
+        make_request: Function that creates a replacement streaming response.
+        collector: Function that consumes one response and builds the result.
+        initial_response: Already-open first response.
+        body_max_retries: Number of retries after the initial attempt.
+        body_retry_base_delay: Initial exponential-backoff delay in seconds.
+        on_http_error: Optional factory for a non-200 retry response error.
+
+    Returns:
+        The fully collected API response.
+
+    Raises:
+        httpx.HTTPError: If body retries are exhausted.
+        Exception: Error returned by ``on_http_error`` for a non-200 response.
+    """
+    response = initial_response
+
+    for retry_number in range(body_max_retries + 1):
+        try:
+            if response.status_code != 200:
+                try:
+                    error_content = await response.aread()
+                    error_text = error_content.decode("utf-8", errors="replace")
+                except RETRYABLE_STREAM_EXCEPTIONS:
+                    error_text = "Unable to read upstream error response"
+                finally:
+                    await response.aclose()
+
+                if on_http_error:
+                    raise on_http_error(response.status_code, error_text)
+                raise httpx.HTTPStatusError(
+                    f"Upstream API error ({response.status_code}): {error_text}",
+                    request=response.request,
+                    response=response,
+                )
+
+            return await collector(response)
+        except RETRYABLE_STREAM_EXCEPTIONS as exc:
+            try:
+                await response.aclose()
+            except RETRYABLE_STREAM_EXCEPTIONS:
+                pass
+
+            if retry_number >= body_max_retries:
+                logger.error(
+                    "Non-streaming upstream body remained interrupted after {} retries: {}",
+                    body_max_retries,
+                    str(exc) or type(exc).__name__,
+                )
+                raise
+
+            delay = body_retry_base_delay * (2 ** retry_number)
+            logger.warning(
+                "Non-streaming upstream body interrupted; retrying {}/{} in {:.2f}s: {}",
+                retry_number + 1,
+                body_max_retries,
+                delay,
+                str(exc) or type(exc).__name__,
+            )
+            if delay > 0:
+                await asyncio.sleep(delay)
+            response = await make_request()
+
+    raise RuntimeError("Unreachable stream body retry state")
 
 async def stream_with_first_token_retry(
     make_request: Callable[[], Awaitable[httpx.Response]],

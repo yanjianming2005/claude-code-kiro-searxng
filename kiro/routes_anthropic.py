@@ -51,6 +51,7 @@ from kiro.streaming_anthropic import (
     stream_with_first_token_retry_anthropic,
 )
 from kiro.http_client import KiroHttpClient
+from kiro.streaming_core import collect_with_stream_body_retry
 from kiro.utils import generate_conversation_id
 from kiro.tokenizer import estimate_request_tokens
 from kiro.config import WEB_SEARCH_ENABLED
@@ -497,14 +498,28 @@ async def messages(
                     
                     else:
                         # Non-streaming mode
-                        anthropic_response = await collect_anthropic_response(
-                            response,
-                            request_data.model,
-                            model_cache,
-                            auth_manager,
-                            request_messages=messages_for_tokenizer,
-                            request_tools=tools_for_tokenizer,
-                            request_system=system_for_tokenizer,
+                        async def make_retry_request() -> httpx.Response:
+                            return await http_client.request_with_retry("POST", url, kiro_payload, stream=True)
+
+                        async def collect_response(retry_response: httpx.Response) -> dict:
+                            return await collect_anthropic_response(
+                                retry_response,
+                                request_data.model,
+                                model_cache,
+                                auth_manager,
+                                request_messages=messages_for_tokenizer,
+                                request_tools=tools_for_tokenizer,
+                                request_system=system_for_tokenizer,
+                            )
+
+                        anthropic_response = await collect_with_stream_body_retry(
+                            make_request=make_retry_request,
+                            collector=collect_response,
+                            initial_response=response,
+                            on_http_error=lambda status, text: HTTPException(
+                                status_code=502,
+                                detail=f"Retry request failed with upstream HTTP {status}: {text}",
+                            ),
                         )
                         
                         await http_client.close()
@@ -856,14 +871,28 @@ async def messages(
         
         else:
             # Non-streaming mode - collect entire response
-            anthropic_response = await collect_anthropic_response(
-                response,
-                request_data.model,
-                model_cache,
-                auth_manager,
-                request_messages=messages_for_tokenizer,
-                request_tools=tools_for_tokenizer,
-                request_system=system_for_tokenizer,
+            async def make_retry_request() -> httpx.Response:
+                return await http_client.request_with_retry("POST", url, kiro_payload, stream=True)
+
+            async def collect_response(retry_response: httpx.Response) -> dict:
+                return await collect_anthropic_response(
+                    retry_response,
+                    request_data.model,
+                    model_cache,
+                    auth_manager,
+                    request_messages=messages_for_tokenizer,
+                    request_tools=tools_for_tokenizer,
+                    request_system=system_for_tokenizer,
+                )
+
+            anthropic_response = await collect_with_stream_body_retry(
+                make_request=make_retry_request,
+                collector=collect_response,
+                initial_response=response,
+                on_http_error=lambda status, text: HTTPException(
+                    status_code=502,
+                    detail=f"Retry request failed with upstream HTTP {status}: {text}",
+                ),
             )
             
             await http_client.close()

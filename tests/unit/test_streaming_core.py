@@ -26,6 +26,7 @@ from kiro.streaming_core import (
     parse_kiro_stream,
     collect_stream_to_result,
     calculate_tokens_from_context_usage,
+    collect_with_stream_body_retry,
     stream_with_first_token_retry,
     _process_chunk,
 )
@@ -1893,3 +1894,108 @@ class TestStreamWithFirstTokenRetryCore:
 
         assert call_count == 1
         assert chunks == ["already-visible"]
+
+
+class TestCollectWithStreamBodyRetry:
+    """Tests for safe non-streaming response body replay."""
+
+    @pytest.mark.asyncio
+    async def test_returns_initial_collection_without_retry(self):
+        initial_response = AsyncMock()
+        initial_response.status_code = 200
+        make_request = AsyncMock()
+        collector = AsyncMock(return_value={"content": "complete"})
+
+        result = await collect_with_stream_body_retry(
+            make_request=make_request,
+            collector=collector,
+            initial_response=initial_response,
+            body_retry_base_delay=0,
+        )
+
+        assert result == {"content": "complete"}
+        make_request.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_retries_incomplete_non_streaming_body(self):
+        initial_response = AsyncMock()
+        initial_response.status_code = 200
+        initial_response.aclose = AsyncMock()
+        retry_response = AsyncMock()
+        retry_response.status_code = 200
+
+        make_request = AsyncMock(return_value=retry_response)
+
+        async def collector(response):
+            if response is initial_response:
+                raise httpx.RemoteProtocolError("incomplete chunked read")
+            return {"content": "recovered"}
+
+        result = await collect_with_stream_body_retry(
+            make_request=make_request,
+            collector=collector,
+            initial_response=initial_response,
+            body_max_retries=2,
+            body_retry_base_delay=0,
+        )
+
+        assert result == {"content": "recovered"}
+        make_request.assert_awaited_once()
+        initial_response.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_raises_after_non_streaming_body_retries_exhausted(self):
+        responses = []
+
+        def make_response():
+            response = AsyncMock()
+            response.status_code = 200
+            response.aclose = AsyncMock()
+            responses.append(response)
+            return response
+
+        initial_response = make_response()
+
+        async def make_request():
+            return make_response()
+
+        async def collector(response):
+            raise httpx.ReadError("body interrupted")
+
+        with pytest.raises(httpx.ReadError):
+            await collect_with_stream_body_retry(
+                make_request=make_request,
+                collector=collector,
+                initial_response=initial_response,
+                body_max_retries=2,
+                body_retry_base_delay=0,
+            )
+
+        assert len(responses) == 3
+        for response in responses:
+            response.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_uses_http_error_factory_for_retry_response(self):
+        initial_response = AsyncMock()
+        initial_response.status_code = 200
+        initial_response.aclose = AsyncMock()
+        retry_response = AsyncMock()
+        retry_response.status_code = 503
+        retry_response.aread = AsyncMock(return_value=b"unavailable")
+        retry_response.aclose = AsyncMock()
+
+        async def collector(response):
+            raise httpx.RemoteProtocolError("incomplete chunked read")
+
+        with pytest.raises(ValueError, match="503:unavailable"):
+            await collect_with_stream_body_retry(
+                make_request=AsyncMock(return_value=retry_response),
+                collector=collector,
+                initial_response=initial_response,
+                body_max_retries=1,
+                body_retry_base_delay=0,
+                on_http_error=lambda status, text: ValueError(f"{status}:{text}"),
+            )
+
+        retry_response.aclose.assert_awaited_once()
