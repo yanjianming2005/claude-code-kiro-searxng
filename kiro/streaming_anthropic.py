@@ -46,10 +46,16 @@ from kiro.streaming_core import (
     KiroEvent,
     calculate_tokens_from_context_usage,
     stream_with_first_token_retry,
+    RETRYABLE_STREAM_EXCEPTIONS,
 )
 from kiro.tokenizer import count_tokens, estimate_request_tokens
 from kiro.parsers import parse_bracket_tool_calls, deduplicate_tool_calls
-from kiro.config import FIRST_TOKEN_TIMEOUT, FIRST_TOKEN_MAX_RETRIES, FAKE_REASONING_HANDLING
+from kiro.config import (
+    FIRST_TOKEN_TIMEOUT,
+    FIRST_TOKEN_MAX_RETRIES,
+    FAKE_REASONING_HANDLING,
+    STREAM_GRACEFUL_EOF,
+)
 
 if TYPE_CHECKING:
     from kiro.auth import KiroAuthManager
@@ -96,6 +102,43 @@ def generate_thinking_signature() -> str:
         Placeholder signature string
     """
     return f"sig_{uuid.uuid4().hex[:32]}"
+
+
+async def _parse_kiro_stream_with_graceful_eof(
+    response: httpx.Response,
+    first_token_timeout: float,
+) -> AsyncGenerator[KiroEvent, None]:
+    """Convert retryable mid-stream disconnects into a normal early EOF.
+
+    Before the first Kiro event, propagate the exception so the outer layer
+    can replay safely. After an event has arrived, replay could duplicate text
+    or tool calls, so the existing truncation path is allowed to close the
+    Anthropic SSE sequence cleanly.
+
+    Args:
+        response: Streaming Kiro HTTP response.
+        first_token_timeout: Maximum wait for the first upstream byte.
+
+    Yields:
+        Parsed Kiro events.
+
+    Raises:
+        httpx.HTTPError: If the disconnect happens before the first event or
+            graceful EOF handling is disabled.
+    """
+    event_seen = False
+    try:
+        async for event in parse_kiro_stream(response, first_token_timeout):
+            event_seen = True
+            yield event
+    except RETRYABLE_STREAM_EXCEPTIONS as exc:
+        if not STREAM_GRACEFUL_EOF or not event_seen:
+            raise
+        logger.warning(
+            "Upstream stream closed after output began; completing as a "
+            "truncated Anthropic response: {}",
+            str(exc) or type(exc).__name__,
+        )
 
 
 def _extract_cache_usage_fields(usage: Optional[Dict[str, Any]]) -> Dict[str, int]:
@@ -202,6 +245,15 @@ async def stream_kiro_to_anthropic(
     truncated_tools: List[Dict[str, Any]] = []
     
     try:
+        # Do not commit the downstream SSE response until Kiro has produced an
+        # event. If the chunked body breaks before then, the outer layer can
+        # transparently replay the request.
+        event_stream = _parse_kiro_stream_with_graceful_eof(response, first_token_timeout)
+        try:
+            first_event = await event_stream.__anext__()
+        except StopAsyncIteration:
+            first_event = None
+
         # Send message_start event
         yield format_sse_event("message_start", {
             "type": "message_start",
@@ -220,7 +272,13 @@ async def stream_kiro_to_anthropic(
             }
         })
         
-        async for event in parse_kiro_stream(response, first_token_timeout):
+        async def events_with_first() -> AsyncGenerator[KiroEvent, None]:
+            if first_event is not None:
+                yield first_event
+            async for remaining_event in event_stream:
+                yield remaining_event
+
+        async for event in events_with_first():
             if event.type == "content":
                 content = event.content or ""
                 full_content += content
@@ -693,6 +751,10 @@ async def stream_kiro_to_anthropic(
         )
         
     except FirstTokenTimeoutError:
+        raise
+    except RETRYABLE_STREAM_EXCEPTIONS:
+        # This path occurs before message_start. Emitting an Anthropic error
+        # event here would commit the response and prevent a safe replay.
         raise
     except GeneratorExit:
         logger.debug("Client disconnected (GeneratorExit)")

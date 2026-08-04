@@ -300,6 +300,19 @@ docker compose ps
 
 如果客户端报错时服务端没有对应的 `POST /v1/messages`，问题在 VS Code 本地认证；如果已经收到请求并返回 401，再检查 `ANTHROPIC_AUTH_TOKEN` 与 `PROXY_API_KEY` 是否一致。
 
+### `incomplete chunked read`
+
+Gateway 默认会在尚未向客户端输出内容时自动重试两次；如果回答已经输出了一部分，则把断流转换成合法的截断结束，避免盲目重放导致文本或工具调用重复。可在 `.env` 调整：
+
+```bash
+STREAM_BODY_MAX_RETRIES=2
+STREAM_BODY_RETRY_BASE_DELAY=0.5
+STREAM_GRACEFUL_EOF=true
+TRUNCATION_RECOVERY=true
+```
+
+`STREAMING_READ_TIMEOUT` 只控制等待时间，无法阻止上游主动关闭连接。
+
 ### `Web search failed`
 
 先直接打开 `http://127.0.0.1:8768`，再运行：

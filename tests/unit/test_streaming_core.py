@@ -15,6 +15,7 @@ Tests for:
 
 import pytest
 import asyncio
+import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
 from dataclasses import asdict
 
@@ -1832,3 +1833,63 @@ class TestStreamWithFirstTokenRetryCore:
         assert make_request_call_count == 1
         assert len(chunks) == 1
         print("✓ make_request called immediately when initial_response is None")
+
+    @pytest.mark.asyncio
+    async def test_retries_interrupted_body_before_downstream_output(self):
+        """A broken chunked body is replayed when no SSE chunk was emitted."""
+        call_count = 0
+
+        async def mock_make_request():
+            nonlocal call_count
+            call_count += 1
+            response = AsyncMock()
+            response.status_code = 200
+            response.aclose = AsyncMock()
+            return response
+
+        async def mock_stream_processor(response):
+            if call_count == 1:
+                raise httpx.RemoteProtocolError("incomplete chunked read")
+            yield "recovered"
+
+        chunks = []
+        async for chunk in stream_with_first_token_retry(
+            make_request=mock_make_request,
+            stream_processor=mock_stream_processor,
+            body_max_retries=2,
+            body_retry_base_delay=0,
+        ):
+            chunks.append(chunk)
+
+        assert call_count == 2
+        assert chunks == ["recovered"]
+
+    @pytest.mark.asyncio
+    async def test_does_not_replay_interrupted_body_after_downstream_output(self):
+        """Never replay a stream after a client-visible chunk was emitted."""
+        call_count = 0
+
+        async def mock_make_request():
+            nonlocal call_count
+            call_count += 1
+            response = AsyncMock()
+            response.status_code = 200
+            response.aclose = AsyncMock()
+            return response
+
+        async def mock_stream_processor(response):
+            yield "already-visible"
+            raise httpx.RemoteProtocolError("incomplete chunked read")
+
+        chunks = []
+        with pytest.raises(httpx.RemoteProtocolError):
+            async for chunk in stream_with_first_token_retry(
+                make_request=mock_make_request,
+                stream_processor=mock_stream_processor,
+                body_max_retries=2,
+                body_retry_base_delay=0,
+            ):
+                chunks.append(chunk)
+
+        assert call_count == 1
+        assert chunks == ["already-visible"]

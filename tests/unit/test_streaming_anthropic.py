@@ -14,6 +14,7 @@ Tests for:
 import pytest
 import json
 import uuid
+import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from kiro.streaming_anthropic import (
@@ -25,6 +26,55 @@ from kiro.streaming_anthropic import (
     stream_with_first_token_retry_anthropic,
 )
 from kiro.streaming_core import KiroEvent, StreamResult
+
+
+class TestInterruptedAnthropicStream:
+    """Regression coverage for incomplete chunked upstream responses."""
+
+    @pytest.mark.asyncio
+    async def test_pre_output_disconnect_emits_nothing_and_propagates(
+        self, mock_response, mock_model_cache, mock_auth_manager
+    ):
+        async def broken_stream(*args, **kwargs):
+            raise httpx.RemoteProtocolError("incomplete chunked read")
+            yield  # pragma: no cover - make this an async generator
+
+        chunks = []
+        with patch("kiro.streaming_anthropic.parse_kiro_stream", broken_stream):
+            with pytest.raises(httpx.RemoteProtocolError):
+                async for chunk in stream_kiro_to_anthropic(
+                    mock_response,
+                    "claude-opus-5",
+                    mock_model_cache,
+                    mock_auth_manager,
+                ):
+                    chunks.append(chunk)
+
+        assert chunks == []
+
+    @pytest.mark.asyncio
+    async def test_midstream_disconnect_finishes_as_truncated_response(
+        self, mock_response, mock_model_cache, mock_auth_manager
+    ):
+        async def broken_stream(*args, **kwargs):
+            yield KiroEvent(type="content", content="partial answer")
+            raise httpx.RemoteProtocolError("incomplete chunked read")
+
+        with patch("kiro.streaming_anthropic.parse_kiro_stream", broken_stream):
+            chunks = [
+                chunk
+                async for chunk in stream_kiro_to_anthropic(
+                    mock_response,
+                    "claude-opus-5",
+                    mock_model_cache,
+                    mock_auth_manager,
+                )
+            ]
+
+        output = "".join(chunks)
+        assert "event: error" not in output
+        assert '"stop_reason": "max_tokens"' in output
+        assert "event: message_stop" in output
 
 
 # ==================================================================================================

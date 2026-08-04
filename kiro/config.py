@@ -372,6 +372,20 @@ STREAMING_READ_TIMEOUT: float = float(os.getenv("STREAMING_READ_TIMEOUT", "300")
 # Default: 3 attempts
 FIRST_TOKEN_MAX_RETRIES: int = int(os.getenv("FIRST_TOKEN_MAX_RETRIES", "3"))
 
+# Maximum number of retries when the upstream closes the response body before
+# the gateway has emitted any client-visible SSE event. This is the number of
+# retries after the initial attempt.
+STREAM_BODY_MAX_RETRIES: int = int(os.getenv("STREAM_BODY_MAX_RETRIES", "2"))
+
+# Initial delay (seconds) for interrupted-body retries. Subsequent retries use
+# exponential backoff.
+STREAM_BODY_RETRY_BASE_DELAY: float = float(os.getenv("STREAM_BODY_RETRY_BASE_DELAY", "0.5"))
+
+# Once output has started, finish an interrupted Anthropic stream as truncated
+# instead of exposing a broken 500 response. Replaying at that point is unsafe
+# because it can duplicate text or tool calls.
+STREAM_GRACEFUL_EOF: bool = os.getenv("STREAM_GRACEFUL_EOF", "true").lower() in ("true", "1", "yes")
+
 # ==================================================================================================
 # Debug Settings
 # ==================================================================================================

@@ -42,6 +42,7 @@ from kiro.config import (
     FIRST_TOKEN_TIMEOUT,
     FIRST_TOKEN_MAX_RETRIES,
     FAKE_REASONING_HANDLING,
+    STREAM_GRACEFUL_EOF,
 )
 from kiro.tokenizer import count_tokens, count_message_tokens, count_tools_tokens
 
@@ -51,6 +52,7 @@ from kiro.streaming_core import (
     FirstTokenTimeoutError,
     KiroEvent,
     calculate_tokens_from_context_usage,
+    RETRYABLE_STREAM_EXCEPTIONS,
     stream_with_first_token_retry as stream_with_first_token_retry_core,
 )
 
@@ -67,6 +69,38 @@ except ImportError:
 
 # Re-export FirstTokenTimeoutError for backward compatibility
 __all__ = ['FirstTokenTimeoutError', 'stream_kiro_to_openai', 'stream_with_first_token_retry', 'collect_stream_response']
+
+
+async def _parse_kiro_stream_with_graceful_eof(
+    response: httpx.Response,
+    first_token_timeout: float,
+) -> AsyncGenerator[KiroEvent, None]:
+    """Convert retryable mid-stream disconnects into a normal early EOF.
+
+    Args:
+        response: Streaming Kiro HTTP response.
+        first_token_timeout: Maximum wait for the first upstream byte.
+
+    Yields:
+        Parsed Kiro events.
+
+    Raises:
+        httpx.HTTPError: If the disconnect happens before the first event or
+            graceful EOF handling is disabled.
+    """
+    event_seen = False
+    try:
+        async for event in parse_kiro_stream(response, first_token_timeout):
+            event_seen = True
+            yield event
+    except RETRYABLE_STREAM_EXCEPTIONS as exc:
+        if not STREAM_GRACEFUL_EOF or not event_seen:
+            raise
+        logger.warning(
+            "Upstream stream closed after output began; completing as a "
+            "truncated OpenAI response: {}",
+            str(exc) or type(exc).__name__,
+        )
 
 
 async def stream_kiro_to_openai_internal(
@@ -129,7 +163,7 @@ async def stream_kiro_to_openai_internal(
     try:
         # Use streaming_core.parse_kiro_stream for unified event parsing
         # This handles AWS SSE parsing, first token timeout, and thinking parser
-        async for event in parse_kiro_stream(response, first_token_timeout):
+        async for event in _parse_kiro_stream_with_graceful_eof(response, first_token_timeout):
             if event.type == "content" and event.content:
                 # Accumulate content for bracket tool call detection
                 full_content += event.content

@@ -41,6 +41,8 @@ from kiro.parsers import AwsEventStreamParser, parse_bracket_tool_calls, dedupli
 from kiro.config import (
     FIRST_TOKEN_TIMEOUT,
     FIRST_TOKEN_MAX_RETRIES,
+    STREAM_BODY_MAX_RETRIES,
+    STREAM_BODY_RETRY_BASE_DELAY,
     FAKE_REASONING_ENABLED,
     FAKE_REASONING_HANDLING,
 )
@@ -109,6 +111,15 @@ class StreamResult:
 class FirstTokenTimeoutError(Exception):
     """Exception raised when first token timeout occurs."""
     pass
+
+
+# httpx raises these while consuming an already-established response body.
+# They are safe to retry only before client-visible output has been emitted.
+RETRYABLE_STREAM_EXCEPTIONS = (
+    httpx.RemoteProtocolError,
+    httpx.ReadError,
+    httpx.ReadTimeout,
+)
 
 
 # ==================================================================================================
@@ -372,6 +383,8 @@ async def stream_with_first_token_retry(
     initial_response: Optional[httpx.Response] = None,
     max_retries: int = FIRST_TOKEN_MAX_RETRIES,
     first_token_timeout: float = FIRST_TOKEN_TIMEOUT,
+    body_max_retries: int = STREAM_BODY_MAX_RETRIES,
+    body_retry_base_delay: float = STREAM_BODY_RETRY_BASE_DELAY,
     on_http_error: Optional[Callable[[int, str], Exception]] = None,
     on_all_retries_failed: Optional[Callable[[int, float], Exception]] = None,
 ) -> AsyncGenerator[str, None]:
@@ -393,6 +406,10 @@ async def stream_with_first_token_retry(
                          This allows reusing an already-opened HTTP 200 response.
         max_retries: Maximum number of attempts
         first_token_timeout: First token wait timeout (seconds)
+        body_max_retries: Number of safe retries for interrupted bodies before
+            any downstream output has been emitted.
+        body_retry_base_delay: Initial exponential-backoff delay in seconds for
+            interrupted-body retries.
         on_http_error: Optional callback to create exception for HTTP errors.
                       Receives (status_code, error_text), returns Exception.
                       If None, raises generic Exception.
@@ -418,16 +435,21 @@ async def stream_with_first_token_retry(
         ...     print(chunk)
     """
     last_error: Optional[Exception] = None
-    
-    for attempt in range(max_retries):
+    first_token_failures = 0
+    body_retries = 0
+    attempt = 0
+
+    while True:
+        attempt += 1
         response: Optional[httpx.Response] = None
+        downstream_started = False
         try:
             # Make request
-            if attempt > 0:
-                logger.warning(f"Retry attempt {attempt + 1}/{max_retries} after first token timeout")
+            if attempt > 1:
+                logger.warning(f"Starting streaming retry attempt {attempt}")
             
             # On first attempt, reuse initial_response if provided
-            if attempt == 0 and initial_response is not None:
+            if attempt == 1 and initial_response is not None:
                 response = initial_response
                 logger.debug("Reusing initial response for first attempt")
             else:
@@ -455,6 +477,7 @@ async def stream_with_first_token_retry(
             
             # Try to stream with first token timeout
             async for chunk in stream_processor(response):
+                downstream_started = True
                 yield chunk
             
             # Successfully completed - exit
@@ -462,8 +485,9 @@ async def stream_with_first_token_retry(
             
         except FirstTokenTimeoutError as e:
             last_error = e
+            first_token_failures += 1
             logger.warning(
-                f"[FirstTokenTimeout] Attempt {attempt + 1}/{max_retries} failed - "
+                f"[FirstTokenTimeout] Attempt {first_token_failures}/{max_retries} failed - "
                 f"model did not respond within {first_token_timeout}s"
             )
             
@@ -474,9 +498,47 @@ async def stream_with_first_token_retry(
                 except Exception:
                     pass
             
-            # Continue to next attempt
+            if downstream_started:
+                raise
+
+            if first_token_failures >= max_retries:
+                break
+
             continue
-            
+
+        except RETRYABLE_STREAM_EXCEPTIONS as e:
+            last_error = e
+
+            if response:
+                try:
+                    await response.aclose()
+                except Exception:
+                    pass
+
+            # Replaying after client-visible output could duplicate text or
+            # execute a tool twice. API-specific formatters handle that case
+            # as a graceful truncated response.
+            if downstream_started or body_retries >= body_max_retries:
+                logger.error(
+                    "Upstream stream interrupted and cannot be retried safely: {}",
+                    str(e) or type(e).__name__,
+                )
+                raise
+
+            delay = body_retry_base_delay * (2 ** body_retries)
+            body_retries += 1
+            logger.warning(
+                "Upstream stream interrupted before downstream output; "
+                "retrying {}/{} in {:.2f}s: {}",
+                body_retries,
+                body_max_retries,
+                delay,
+                str(e) or type(e).__name__,
+            )
+            if delay > 0:
+                await asyncio.sleep(delay)
+            continue
+
         except Exception as e:
             # Other errors - no retry, propagate
             # Use positional argument to avoid loguru interpreting curly braces in error message as format placeholders
