@@ -583,6 +583,33 @@ class TestFallbackModelsConfig:
         print("Verification: Contains at least one Claude model...")
         has_claude = any("claude" in mid.lower() for mid in model_ids)
         assert has_claude, "No Claude models in fallback list"
+
+    def test_current_kiro_models_have_official_token_limits(self):
+        """Current Kiro Claude models must use their documented context/output limits."""
+        from kiro.config import FALLBACK_MODELS
+
+        models = {model["modelId"]: model for model in FALLBACK_MODELS}
+
+        assert models["claude-opus-5"]["tokenLimits"] == {
+            "maxInputTokens": 1000000,
+            "maxOutputTokens": 128000,
+        }
+        assert models["claude-sonnet-5"]["tokenLimits"] == {
+            "maxInputTokens": 1000000,
+            "maxOutputTokens": 128000,
+        }
+        assert models["claude-opus-4.8"]["tokenLimits"] == {
+            "maxInputTokens": 1000000,
+            "maxOutputTokens": 128000,
+        }
+        assert models["claude-opus-4.7"]["tokenLimits"] == {
+            "maxInputTokens": 1000000,
+            "maxOutputTokens": 64000,
+        }
+        assert models["claude-sonnet-4.6"]["tokenLimits"] == {
+            "maxInputTokens": 1000000,
+            "maxOutputTokens": 64000,
+        }
     
     def test_fallback_models_use_dot_format(self):
         """

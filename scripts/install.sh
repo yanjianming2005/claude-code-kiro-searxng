@@ -95,6 +95,8 @@ umask 077
   printf 'export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-opus-5"\n'
   printf 'export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-sonnet-5"\n'
   printf 'export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4.5"\n'
+  printf 'export CLAUDE_CODE_MAX_CONTEXT_TOKENS="1000000"\n'
+  printf 'export CLAUDE_CODE_MAX_OUTPUT_TOKENS="128000"\n'
 } > "${claude_env_file}"
 
 printf '正在构建并启动 Gateway 与 SearXNG...\n'

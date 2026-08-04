@@ -27,7 +27,7 @@ Loads environment variables and provides typed access to them.
 import os
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -278,22 +278,23 @@ HIDDEN_FROM_LIST: List[str] = ["auto"]
 # - Some models may not be available on your Kiro plan (e.g., Opus on free tier)
 # - New models released after this version won't appear here
 # - Update gateway regularly to get the latest model list
-FALLBACK_MODELS: List[Dict[str, str]] = [
-    {"modelId": "auto"},
-    {"modelId": "claude-opus-5"},
-    {"modelId": "claude-sonnet-5"},
-    {"modelId": "claude-haiku-4.5"},
-    {"modelId": "claude-sonnet-4"},
-    {"modelId": "claude-sonnet-4.5"},
-    {"modelId": "claude-sonnet-4.6"},
-    {"modelId": "claude-opus-4.5"},
-    {"modelId": "claude-opus-4.6"},
-    {"modelId": "claude-opus-4.7"},
-    {"modelId": "deepseek-3.2"},
-    {"modelId": "glm-5"},
-    {"modelId": "minimax-m2.1"},
-    {"modelId": "minimax-m2.5"},
-    {"modelId": "qwen3-coder-next"},
+FALLBACK_MODELS: List[Dict[str, Any]] = [
+    {"modelId": "auto", "tokenLimits": {"maxInputTokens": 200000}},
+    {"modelId": "claude-opus-5", "tokenLimits": {"maxInputTokens": 1000000, "maxOutputTokens": 128000}},
+    {"modelId": "claude-sonnet-5", "tokenLimits": {"maxInputTokens": 1000000, "maxOutputTokens": 128000}},
+    {"modelId": "claude-opus-4.8", "tokenLimits": {"maxInputTokens": 1000000, "maxOutputTokens": 128000}},
+    {"modelId": "claude-opus-4.7", "tokenLimits": {"maxInputTokens": 1000000, "maxOutputTokens": 64000}},
+    {"modelId": "claude-opus-4.6", "tokenLimits": {"maxInputTokens": 1000000, "maxOutputTokens": 64000}},
+    {"modelId": "claude-sonnet-4.6", "tokenLimits": {"maxInputTokens": 1000000, "maxOutputTokens": 64000}},
+    {"modelId": "claude-opus-4.5", "tokenLimits": {"maxInputTokens": 200000}},
+    {"modelId": "claude-sonnet-4.5", "tokenLimits": {"maxInputTokens": 200000}},
+    {"modelId": "claude-sonnet-4", "tokenLimits": {"maxInputTokens": 200000}},
+    {"modelId": "claude-haiku-4.5", "tokenLimits": {"maxInputTokens": 200000}},
+    {"modelId": "deepseek-3.2", "tokenLimits": {"maxInputTokens": 128000}},
+    {"modelId": "glm-5", "tokenLimits": {"maxInputTokens": 200000}},
+    {"modelId": "minimax-m2.1", "tokenLimits": {"maxInputTokens": 200000}},
+    {"modelId": "minimax-m2.5", "tokenLimits": {"maxInputTokens": 200000}},
+    {"modelId": "qwen3-coder-next", "tokenLimits": {"maxInputTokens": 256000}},
 ]
 
 # ==================================================================================================

@@ -93,6 +93,8 @@ export ANTHROPIC_MODEL="claude-opus-5"
 export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-opus-5"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-sonnet-5"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4.5"
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS="1000000"
+export CLAUDE_CODE_MAX_OUTPUT_TOKENS="128000"
 ```
 
 必须清除 `ANTHROPIC_AUTH_TOKEN`，否则 Claude Code 可能优先采用已有登录令牌，并跳过本地 API Key 配置。
@@ -137,6 +139,14 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4.5"
     {
       "name": "ANTHROPIC_DEFAULT_HAIKU_MODEL",
       "value": "claude-haiku-4.5"
+    },
+    {
+      "name": "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+      "value": "1000000"
+    },
+    {
+      "name": "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+      "value": "128000"
     },
     {
       "name": "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
@@ -219,6 +229,8 @@ export ANTHROPIC_MODEL="claude-opus-5"
 export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-opus-5"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-sonnet-5"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4.5"
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS="1000000"
+export CLAUDE_CODE_MAX_OUTPUT_TOKENS="128000"
 ```
 
 客户端可先验证：
