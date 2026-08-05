@@ -64,10 +64,14 @@ searxng_secret="$(openssl rand -hex 32)"
 gateway_port="${GATEWAY_PORT:-8767}"
 gateway_bind_host="${GATEWAY_BIND_HOST:-127.0.0.1}"
 searxng_port="${SEARXNG_PORT:-8768}"
-vpn_proxy_url=""
-if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 8118 >/dev/null 2>&1; then
-  vpn_proxy_url="http://host.docker.internal:8118"
-  printf '检测到本机 8118 代理，Gateway 将通过该代理访问 Kiro。\n'
+# Kiro/AWS defaults to a direct connection. A local HTTP proxy can terminate
+# long-silent inference streams (for example during extended thinking), so it
+# must never be enabled merely because port 8118 happens to be listening.
+vpn_proxy_url="${GATEWAY_VPN_PROXY_URL:-}"
+if [[ -n "${vpn_proxy_url}" ]]; then
+  printf '已显式配置 Gateway 上游代理：%s\n' "${vpn_proxy_url}"
+else
+  printf 'Gateway 将直连 Kiro/AWS；Claude Code WebFetch 代理需在客户端单独配置。\n'
 fi
 
 umask 077

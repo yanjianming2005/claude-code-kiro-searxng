@@ -60,7 +60,7 @@ GATEWAY_BIND_HOST=0.0.0.0 ./scripts/install.sh
 1. 检查并启动 Docker Desktop。
 2. 检测本机 Kiro 登录凭据和 Profile ARN。
 3. 自动生成本机 Gateway API Key 与 SearXNG secret。
-4. 检测 `127.0.0.1:8118`；若存在，则让 Gateway 通过该代理连接 Kiro。
+4. Gateway 默认直连 Kiro/AWS，不会因为检测到 `8118` 就自动使用代理。
 5. 构建并启动两个容器。
 6. 检查 Gateway，并实际执行一次中文聚合搜索。
 7. 生成仅保存在本机的 `.env` 和 `.claude-env`。
@@ -184,10 +184,10 @@ safety”并阻塞执行。它同时会跳过命令确认，只应在可信的�
 
 保存后使用 `Cmd+Q` 完全退出 VS Code，再重新打开。只执行 `Developer: Reload Window` 有时不能清除旧 Extension Host 的环境和认证缓存。
 
-`VPN_PROXY_URL` 只代理 Gateway 到 Kiro/AWS 的上游请求；Claude Code 内置
-`WebFetch` 在客户端直接访问目标网站，因此需要在 Claude Code 的进程环境中
-另行设置 `HTTP_PROXY` 和 `HTTPS_PROXY`。如果 Gateway 位于另一台局域网主机，
-还应把该主机名加入 `NO_PROXY`，例如：
+Gateway 到 Kiro/AWS 的上游请求默认直连。Claude Code 内置 `WebFetch` 在客户端
+直接访问目标网站，因此需要在 Claude Code 的进程环境中另行设置 `HTTP_PROXY`
+和 `HTTPS_PROXY`。这两个代理变量不会改变 Gateway 服务的上游路线。如果 Gateway
+位于另一台局域网主机，还应把该主机名加入 `NO_PROXY`，例如：
 
 ```jsonc
 {
@@ -292,27 +292,35 @@ Gateway 根据查询文本中是否存在汉字进行路由：
 
 ## 代理配置
 
-安装时若检测到本机 `127.0.0.1:8118`，会自动写入：
+推荐按以下边界配置：
 
-```env
-VPN_PROXY_URL=http://host.docker.internal:8118
+- Gateway → Kiro/AWS：默认直连，`.env` 中 `VPN_PROXY_URL` 留空。
+- Claude Code `WebFetch`/GitHub：在 VS Code/CLI 客户端配置
+  `HTTP_PROXY`、`HTTPS_PROXY`。
+- 中文 WebSearch：由本地 SearXNG 处理，保持现有配置。
+
+这样可以避免 Kiro 长时间思考、上游暂时没有响应数据时，被本地 HTTP 代理按约
+60 秒空闲超时关闭，进而触发多轮流式/非流式重试并表现为 Claude Code 长时间卡住。
+
+只有在当前网络无法直连 Kiro/AWS 时，才显式为安装命令提供 Gateway 代理：
+
+```bash
+GATEWAY_VPN_PROXY_URL=http://host.docker.internal:8118 ./scripts/install.sh
 ```
 
-注意：容器中的 `127.0.0.1` 是容器自身，所以必须使用 `host.docker.internal` 访问宿主机代理。
+容器中的 `127.0.0.1` 是容器自身；确需使用宿主机代理时必须写
+`host.docker.internal`。已有安装也可以修改 `.env` 后重建：
 
-如果你的代理端口不同，修改 `.env` 后重建：
+```env
+VPN_PROXY_URL=
+```
 
 ```bash
 docker compose up -d --force-recreate
 ```
 
-中国搜索引擎默认直连，不经过该代理。
-
-这里的 `VPN_PROXY_URL` 与 Claude Code 客户端的联网代理是两层配置：
-
-- Gateway 上游：容器使用 `VPN_PROXY_URL=http://host.docker.internal:8118`。
-- Claude Code `WebFetch`：VS Code/CLI 使用 `HTTP_PROXY`、`HTTPS_PROXY`；
-  使用远程 Gateway 时，将 Gateway 主机加入 `NO_PROXY`。
+中国搜索引擎默认直连，不经过 Claude Code 客户端的代理。使用远程 Gateway 时，
+还要将 Gateway 主机加入客户端 `NO_PROXY`。
 
 ## 故障排查
 
