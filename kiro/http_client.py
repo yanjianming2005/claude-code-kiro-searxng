@@ -220,6 +220,8 @@ class KiroHttpClient:
         last_error = None
         last_error_info: Optional[NetworkErrorInfo] = None
         last_response: Optional[httpx.Response] = None  # Для сохранения последнего 429/5xx
+        request_json_data = json_data
+        model_fields_fallback_used = False
         
         for attempt in range(max_retries):
             try:
@@ -230,8 +232,8 @@ class KiroHttpClient:
                 # Build request kwargs based on parameters
                 request_kwargs = {"headers": headers}
                 
-                if json_data is not None:
-                    request_kwargs["content"] = json.dumps(json_data).encode()
+                if request_json_data is not None:
+                    request_kwargs["content"] = json.dumps(request_json_data).encode()
                 
                 if params is not None:
                     request_kwargs["params"] = params
@@ -257,7 +259,32 @@ class KiroHttpClient:
                             self._tool_repair_payload,
                         )
                     return response
-                
+
+                # Some internal Kiro models used by WebFetch/WebSearch reject
+                # native inference controls even though the primary chat models
+                # accept them. Retry exactly once without the optional field,
+                # and only for Kiro's explicit model-compatibility error.
+                if (
+                    response.status_code == 400
+                    and not model_fields_fallback_used
+                    and isinstance(request_json_data, dict)
+                    and "additionalModelRequestFields" in request_json_data
+                ):
+                    error_body = (await response.aread()).decode("utf-8", errors="replace")
+                    if (
+                        "additionalModelRequestFields" in error_body
+                        and "not supported for this model" in error_body
+                    ):
+                        await response.aclose()
+                        request_json_data = dict(request_json_data)
+                        request_json_data.pop("additionalModelRequestFields", None)
+                        model_fields_fallback_used = True
+                        logger.warning(
+                            "Kiro model rejected additionalModelRequestFields; "
+                            "retrying once without optional inference controls"
+                        )
+                        continue
+
                 # 403 - token expired, refresh and retry
                 if response.status_code == 403:
                     logger.warning(f"Received 403, refreshing token (attempt {attempt + 1}/{MAX_RETRIES})")

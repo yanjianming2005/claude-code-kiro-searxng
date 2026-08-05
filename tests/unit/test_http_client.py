@@ -224,6 +224,69 @@ class TestKiroHttpClientRequestWithRetry:
         print("Verification: Response received...")
         assert response.status_code == 200
         mock_client.request.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_retries_without_unsupported_additional_model_fields(
+        self, mock_auth_manager_for_http
+    ):
+        """Internal models may reject optional inference controls."""
+        http_client = KiroHttpClient(mock_auth_manager_for_http)
+        request = httpx.Request("POST", "https://api.example.com/test")
+        rejected = httpx.Response(
+            400,
+            request=request,
+            content=(
+                b'{"message":"additionalModelRequestFields is not supported '
+                b'for this model","reason":"REQUEST_BODY_INVALID"}'
+            ),
+        )
+        accepted = httpx.Response(200, request=request, content=b"ok")
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
+        mock_client.request = AsyncMock(side_effect=[rejected, accepted])
+        payload = {
+            "conversationState": {"conversationId": "test"},
+            "additionalModelRequestFields": {"max_tokens": 4096},
+        }
+
+        with patch.object(http_client, "_get_client", return_value=mock_client):
+            with patch("kiro.http_client.get_kiro_headers", return_value={}):
+                response = await http_client.request_with_retry(
+                    "POST", "https://api.example.com/test", payload
+                )
+
+        assert response.status_code == 200
+        assert mock_client.request.await_count == 2
+        first_body = json.loads(mock_client.request.await_args_list[0].kwargs["content"])
+        second_body = json.loads(mock_client.request.await_args_list[1].kwargs["content"])
+        assert "additionalModelRequestFields" in first_body
+        assert "additionalModelRequestFields" not in second_body
+        assert "additionalModelRequestFields" in payload
+
+    @pytest.mark.asyncio
+    async def test_does_not_hide_unrelated_400(self, mock_auth_manager_for_http):
+        """Only the explicit unsupported-field error receives a fallback."""
+        http_client = KiroHttpClient(mock_auth_manager_for_http)
+        request = httpx.Request("POST", "https://api.example.com/test")
+        rejected = httpx.Response(
+            400,
+            request=request,
+            content=b'{"message":"invalid conversation"}',
+        )
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
+        mock_client.request = AsyncMock(return_value=rejected)
+
+        with patch.object(http_client, "_get_client", return_value=mock_client):
+            with patch("kiro.http_client.get_kiro_headers", return_value={}):
+                response = await http_client.request_with_retry(
+                    "POST",
+                    "https://api.example.com/test",
+                    {"additionalModelRequestFields": {"max_tokens": 4096}},
+                )
+
+        assert response is rejected
+        mock_client.request.assert_awaited_once()
     
     @pytest.mark.asyncio
     async def test_403_triggers_token_refresh(self, mock_auth_manager_for_http):
