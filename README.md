@@ -153,6 +153,18 @@ export CLAUDE_CODE_MAX_OUTPUT_TOKENS="128000"
     {
       "name": "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
       "value": "1"
+    },
+    {
+      "name": "HTTPS_PROXY",
+      "value": "http://127.0.0.1:8118"
+    },
+    {
+      "name": "HTTP_PROXY",
+      "value": "http://127.0.0.1:8118"
+    },
+    {
+      "name": "NO_PROXY",
+      "value": "127.0.0.1,localhost"
     }
   ]
 }
@@ -171,6 +183,22 @@ safety”并阻塞执行。它同时会跳过命令确认，只应在可信的�
 - `ANTHROPIC_AUTH_TOKEN` 的值必须与服务端 `.env` 中的 `PROXY_API_KEY` 完全相同。
 
 保存后使用 `Cmd+Q` 完全退出 VS Code，再重新打开。只执行 `Developer: Reload Window` 有时不能清除旧 Extension Host 的环境和认证缓存。
+
+`VPN_PROXY_URL` 只代理 Gateway 到 Kiro/AWS 的上游请求；Claude Code 内置
+`WebFetch` 在客户端直接访问目标网站，因此需要在 Claude Code 的进程环境中
+另行设置 `HTTP_PROXY` 和 `HTTPS_PROXY`。如果 Gateway 位于另一台局域网主机，
+还应把该主机名加入 `NO_PROXY`，例如：
+
+```jsonc
+{
+  "name": "NO_PROXY",
+  "value": "127.0.0.1,localhost,gateway-hostname"
+}
+```
+
+代理不在客户端本机时，把示例中的 `127.0.0.1:8118` 改成客户端可访问的
+代理地址。为兼容不同运行时，也可同时配置对应的小写变量
+`http_proxy`、`https_proxy` 和 `no_proxy`。
 
 ## 日常命令
 
@@ -280,6 +308,12 @@ docker compose up -d --force-recreate
 
 中国搜索引擎默认直连，不经过该代理。
 
+这里的 `VPN_PROXY_URL` 与 Claude Code 客户端的联网代理是两层配置：
+
+- Gateway 上游：容器使用 `VPN_PROXY_URL=http://host.docker.internal:8118`。
+- Claude Code `WebFetch`：VS Code/CLI 使用 `HTTP_PROXY`、`HTTPS_PROXY`；
+  使用远程 Gateway 时，将 Gateway 主机加入 `NO_PROXY`。
+
 ## 故障排查
 
 ### `Unable to connect to API (ConnectionRefused)`
@@ -331,6 +365,27 @@ TRUNCATION_RECOVERY=true
 ```
 
 `STREAMING_READ_TIMEOUT` 只控制等待时间，无法阻止上游主动关闭连接。
+
+对于断流时尚未传完的大工具参数，Gateway 会启动第二次纯文本推理，恢复完整
+JSON 后重建标准 `tool_use`。该功能由 `TOOL_CALL_TEXT_RECOVERY=true` 控制，
+默认启用；不会执行残缺的工具参数。
+
+### `additionalModelRequestFields is not supported for this model`
+
+Claude Code 的 `WebFetch`、`WebSearch` 等内部流程可能使用不支持可选推理参数的
+轻量模型。Gateway 会识别这一特定 400，移除
+`additionalModelRequestFields` 后自动重试一次；其他 400 不会被隐藏。请更新到
+包含该兼容逻辑的最新版本并重启 Gateway。
+
+### `connect ECONNREFUSED ...:443`
+
+这表示 Claude Code 客户端直接访问目标网站失败，与 Gateway 是否健康无关。
+为 VS Code Claude Code 配置 `HTTP_PROXY`、`HTTPS_PROXY`，并用 `NO_PROXY`
+排除本机和 Gateway 地址。可先验证：
+
+```bash
+curl --proxy http://127.0.0.1:8118 -I https://github.com/
+```
 
 ### `Web search failed`
 
